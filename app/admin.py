@@ -1,8 +1,8 @@
 """Administrative interface for managing users and rate tables.
 
 This module defines the Flask blueprint that powers the web-based admin
-dashboard.  Views allow administrators to manage user accounts along with
-accessorial charges, fuel surcharges, and beyond and hotshot rate tables.
+dashboard. Views allow administrators to manage user accounts, settings,
+and cost-zone rate data used by the expense platform.
 """
 
 from __future__ import annotations
@@ -41,15 +41,9 @@ from wtforms.validators import DataRequired, Optional
 
 from scripts.import_air_rates import save_unique
 from .models import (
-    Accessorial,
     AppSetting,
-    AirCostZone,
-    BeyondRate,
     CostZone,
-    HotshotRate,
-    RateUpload,
     User,
-    ZipZone,
     db,
 )
 from . import csrf
@@ -62,6 +56,7 @@ from app.services.rate_sets import (
 from app.services.settings import get_settings_cache, reload_overrides, set_setting
 
 admin_bp = Blueprint("admin", __name__, template_folder="templates")
+
 
 def _sync_admin_role(
     user: User,
@@ -148,97 +143,11 @@ def _sync_admin_role(
     user.admin_previous_employee_approved = None
 
 
-class AccessorialForm(FlaskForm):
-    name = StringField("Name", validators=[DataRequired()])
-    amount = FloatField("Amount", validators=[Optional()])
-    is_percentage = BooleanField("Is Percentage")
-
-
-class BeyondRateForm(FlaskForm):
-    rate_set = SelectField("Rate Set", validators=[DataRequired()])
-    zone = StringField("Zone", validators=[DataRequired()])
-    rate = FloatField("Rate", validators=[DataRequired()])
-    up_to_miles = FloatField("Up To Miles", validators=[DataRequired()])
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        _populate_rate_set_choices(self)
-        if not self.rate_set.data:
-            self.rate_set.data = DEFAULT_RATE_SET
-
-
-class HotshotRateForm(FlaskForm):
-    rate_set = SelectField("Rate Set", validators=[DataRequired()])
-    miles = IntegerField("Miles", validators=[DataRequired()])
-    zone = StringField("Zone", validators=[DataRequired()])
-    per_lb = FloatField("Per LB", validators=[Optional()])
-    per_mile = FloatField("Per Mile", validators=[Optional()])
-    min_charge = FloatField("Min Charge", validators=[DataRequired()])
-    weight_break = FloatField("Weight Break", validators=[DataRequired()])
-    fuel_pct = FloatField("Fuel %", validators=[DataRequired()])
-
-    def validate(self, extra_validators: dict | None = None) -> bool:
-        """Validate that at least one rate field is provided.
-
-        Ensures either ``per_lb`` or ``per_mile`` is supplied and
-        greater than zero. Adds an error message to both fields when
-        neither is specified.
-
-        Args:
-            extra_validators: Optional mapping of additional validators.
-
-        Returns:
-            ``True`` if the form is valid, ``False`` otherwise.
-        """
-
-        if not super().validate(extra_validators=extra_validators):
-            return False
-
-        per_lb = self.per_lb.data or 0
-        per_mile = self.per_mile.data or 0
-        if per_lb <= 0 and per_mile <= 0:
-            msg = "Either Per LB or Per Mile must be provided and greater than zero."
-            self.per_lb.errors.append(msg)
-            self.per_mile.errors.append(msg)
-            return False
-        return True
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        _populate_rate_set_choices(self)
-        if not self.rate_set.data:
-            self.rate_set.data = DEFAULT_RATE_SET
-
-
-class ZipZoneForm(FlaskForm):
-    """Form for managing :class:`~app.models.ZipZone` records."""
-
-    zipcode = StringField("ZIP Code", validators=[DataRequired()])
-    dest_zone = IntegerField("Destination Zone", validators=[DataRequired()])
-    beyond = StringField("Beyond", validators=[Optional()])
-
-
 class CostZoneForm(FlaskForm):
     """Form for managing :class:`~app.models.CostZone` records."""
 
     concat = StringField("Concat", validators=[DataRequired()])
     cost_zone = StringField("Cost Zone", validators=[DataRequired()])
-
-
-class AirCostZoneForm(FlaskForm):
-    """Form for managing :class:`~app.models.AirCostZone` records."""
-
-    rate_set = SelectField("Rate Set", validators=[DataRequired()])
-    zone = StringField("Zone", validators=[DataRequired()])
-    min_charge = FloatField("Min Charge", validators=[DataRequired()])
-    per_lb = FloatField("Per LB", validators=[DataRequired()])
-    weight_break = FloatField("Weight Break", validators=[DataRequired()])
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        _populate_rate_set_choices(self)
-        if not self.rate_set.data:
-            self.rate_set.data = DEFAULT_RATE_SET
 
 
 class AppSettingForm(FlaskForm):
@@ -368,25 +277,9 @@ def _parse_required_string(value: Any) -> str:
     return str(value).strip()
 
 
-def _parse_optional_string(value: Any) -> str | None:
-    """Parse an optional string, returning ``None`` when blank."""
-
-    if _is_missing(value):
-        return None
-    return str(value).strip()
-
-
 def _parse_required_float(value: Any) -> float:
     """Parse a float-like value, raising ``ValueError`` when missing."""
 
-    return _clean_numeric(value)
-
-
-def _parse_optional_float(value: Any) -> float | None:
-    """Parse an optional float from the CSV data."""
-
-    if _is_missing(value):
-        return None
     return _clean_numeric(value)
 
 
@@ -423,119 +316,7 @@ def _parse_optional_int(value: Any) -> int | None:
     return _parse_required_int(value)
 
 
-def _parse_bool_flag(value: Any) -> bool:
-    """Parse boolean-like values such as ``True``/``False`` or ``1``/``0``."""
-
-    if _is_missing(value):
-        return False
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)) and not pd.isna(value):
-        return bool(value)
-    text = str(value).strip().lower()
-    if text in {"true", "1", "yes", "y", "t"}:
-        return True
-    if text in {"false", "0", "no", "n", "f"}:
-        return False
-    raise ValueError("enter true/false, yes/no, or 1/0")
-
-
-def _parse_zipcode(value: Any) -> str:
-    """Normalize ZIP code values, preserving leading zeros."""
-
-    if isinstance(value, str):
-        cleaned = value.strip()
-        if cleaned == "":
-            raise ValueError("enter a ZIP code")
-        if cleaned.isdigit():
-            return cleaned.zfill(5) if len(cleaned) <= 5 else cleaned
-        raise ValueError("ZIP codes must contain only digits")
-    if isinstance(value, (int, float)) and not pd.isna(value):
-        numeric = float(value)
-        if not numeric.is_integer():
-            raise ValueError("enter a ZIP code")
-        zip_str = str(int(round(numeric)))
-        return zip_str.zfill(5) if len(zip_str) <= 5 else zip_str
-    if _is_missing(value):
-        raise ValueError("enter a ZIP code")
-    raise ValueError("enter a ZIP code")
-
-
 TABLE_SPECS: Dict[str, TableSpec] = {
-    "accessorials": TableSpec(
-        name="accessorials",
-        label="Accessorials",
-        model=Accessorial,
-        columns=(
-            ColumnSpec("Name", "name", _parse_required_string),
-            ColumnSpec("Amount", "amount", _parse_required_float),
-            ColumnSpec(
-                "Is Percentage",
-                "is_percentage",
-                _parse_bool_flag,
-                required=False,
-                formatter=lambda value: "TRUE" if value else "FALSE",
-            ),
-        ),
-        list_endpoint="admin.list_accessorials",
-        unique_attr="name",
-        order_by=Accessorial.id,
-    ),
-    "beyond_rates": TableSpec(
-        name="beyond_rates",
-        label="Beyond Rates",
-        model=BeyondRate,
-        columns=(
-            ColumnSpec(
-                "Rate Set",
-                "rate_set",
-                lambda value: _parse_rate_set(value, allow_new_rate_sets=True),
-                formatter=str,
-            ),
-            ColumnSpec("Zone", "zone", _parse_required_string),
-            ColumnSpec("Rate", "rate", _parse_required_float),
-            ColumnSpec("Up To Miles", "up_to_miles", _parse_required_float),
-        ),
-        list_endpoint="admin.list_beyond_rates",
-        order_by=(BeyondRate.rate_set, BeyondRate.id),
-    ),
-    "hotshot_rates": TableSpec(
-        name="hotshot_rates",
-        label="Hotshot Rates",
-        model=HotshotRate,
-        columns=(
-            ColumnSpec(
-                "Rate Set",
-                "rate_set",
-                lambda value: _parse_rate_set(value, allow_new_rate_sets=True),
-                formatter=str,
-            ),
-            ColumnSpec("Miles", "miles", _parse_required_int),
-            ColumnSpec("Zone", "zone", _parse_required_string),
-            ColumnSpec("Per LB", "per_lb", _parse_required_float),
-            ColumnSpec("Per Mile", "per_mile", _parse_optional_float, required=False),
-            ColumnSpec("Min Charge", "min_charge", _parse_required_float),
-            ColumnSpec(
-                "Weight Break", "weight_break", _parse_optional_float, required=False
-            ),
-            ColumnSpec("Fuel %", "fuel_pct", _parse_required_float),
-        ),
-        list_endpoint="admin.list_hotshot_rates",
-        order_by=(HotshotRate.rate_set, HotshotRate.miles),
-    ),
-    "zip_zones": TableSpec(
-        name="zip_zones",
-        label="ZIP Zones",
-        model=ZipZone,
-        columns=(
-            ColumnSpec("ZIP Code", "zipcode", _parse_zipcode),
-            ColumnSpec("Dest Zone", "dest_zone", _parse_required_int),
-            ColumnSpec("Beyond", "beyond", _parse_optional_string, required=False),
-        ),
-        list_endpoint="admin.list_zip_zones",
-        unique_attr="zipcode",
-        order_by=ZipZone.zipcode,
-    ),
     "cost_zones": TableSpec(
         name="cost_zones",
         label="Cost Zones",
@@ -547,26 +328,6 @@ TABLE_SPECS: Dict[str, TableSpec] = {
         list_endpoint="admin.list_cost_zones",
         unique_attr="concat",
         order_by=CostZone.concat,
-    ),
-    "air_cost_zones": TableSpec(
-        name="air_cost_zones",
-        label="Air Cost Zones",
-        model=AirCostZone,
-        columns=(
-            ColumnSpec(
-                "Rate Set",
-                "rate_set",
-                lambda value: _parse_rate_set(value, allow_new_rate_sets=True),
-                formatter=str,
-            ),
-            ColumnSpec("Zone", "zone", _parse_required_string),
-            ColumnSpec("Min Charge", "min_charge", _parse_required_float),
-            ColumnSpec("Per LB", "per_lb", _parse_required_float),
-            ColumnSpec("Weight Break", "weight_break", _parse_required_float),
-        ),
-        list_endpoint="admin.list_air_cost_zones",
-        unique_attr=("rate_set", "zone"),
-        order_by=(AirCostZone.rate_set, AirCostZone.zone),
     ),
 }
 
@@ -1193,314 +954,6 @@ def approve_employee(user_id: int) -> Response:
     return redirect(redirect_target)
 
 
-# Accessorial routes
-@admin_bp.route("/accessorials")
-@super_admin_required
-def list_accessorials() -> str:
-    """List all accessorial charges.
-
-    Uses the :class:`Accessorial` model and renders the
-    ``admin_accessorials.html`` template.
-    """
-    accessorials = Accessorial.query.order_by(Accessorial.id).all()
-    return render_template("admin_accessorials.html", accessorials=accessorials)
-
-
-@admin_bp.route("/accessorials/new", methods=["GET", "POST"])
-@super_admin_required
-def new_accessorial() -> Union[str, Response]:
-    """Create a new accessorial charge.
-
-    Uses :class:`AccessorialForm` to populate a new :class:`Accessorial`
-    instance. Renders ``admin_accessorial_form.html`` when displaying the form
-    or when validation fails.
-    """
-    form = AccessorialForm()
-    if form.validate_on_submit():
-        acc = Accessorial(
-            name=form.name.data,
-            amount=form.amount.data,
-            is_percentage=form.is_percentage.data,
-        )
-        db.session.add(acc)
-        db.session.commit()
-        flash("Accessorial created.", "success")
-        return redirect(url_for("admin.list_accessorials"))
-    return render_template("admin_accessorial_form.html", form=form, accessorial=None)
-
-
-@admin_bp.route("/accessorials/<int:acc_id>/edit", methods=["GET", "POST"])
-@super_admin_required
-def edit_accessorial(acc_id: int) -> Union[str, Response]:
-    """Edit an existing accessorial charge.
-
-    Loads the :class:`Accessorial` by ``acc_id`` and binds it to an
-    :class:`AccessorialForm`. Renders ``admin_accessorial_form.html`` for GET
-    requests or when validation fails.
-    """
-    acc = db.session.get(Accessorial, acc_id)
-    if not acc:
-        abort(404)
-    form = AccessorialForm(obj=acc)
-    if form.validate_on_submit():
-        acc.name = form.name.data
-        acc.amount = form.amount.data
-        acc.is_percentage = form.is_percentage.data
-        db.session.commit()
-        flash("Accessorial updated.", "success")
-        return redirect(url_for("admin.list_accessorials"))
-    return render_template("admin_accessorial_form.html", form=form, accessorial=acc)
-
-
-@admin_bp.route("/accessorials/<int:acc_id>/delete", methods=["POST"])
-@super_admin_required
-def delete_accessorial(acc_id: int) -> Response:
-    """Delete an accessorial charge.
-
-    Operates on the :class:`Accessorial` model and redirects to the list view
-    without rendering a template.
-    """
-    acc = db.session.get(Accessorial, acc_id)
-    if not acc:
-        abort(404)
-    db.session.delete(acc)
-    db.session.commit()
-    flash("Accessorial deleted.", "success")
-    return redirect(url_for("admin.list_accessorials"))
-
-
-# Beyond rate routes
-@admin_bp.route("/beyond_rates")
-@super_admin_required
-def list_beyond_rates() -> str:
-    """List all beyond rate entries.
-
-    Queries the :class:`BeyondRate` model and renders
-    ``admin_beyond_rates.html``.
-    """
-    rates = BeyondRate.query.order_by(BeyondRate.rate_set, BeyondRate.id).all()
-    return render_template("admin_beyond_rates.html", beyond_rates=rates)
-
-
-@admin_bp.route("/beyond_rates/new", methods=["GET", "POST"])
-@super_admin_required
-def new_beyond_rate() -> Union[str, Response]:
-    """Create a new beyond rate entry.
-
-    Uses :class:`BeyondRateForm` to create a :class:`BeyondRate`. Renders
-    ``admin_beyond_rate_form.html`` for form display or validation errors.
-    """
-    form = BeyondRateForm()
-    _populate_rate_set_choices(form)
-    if request.method == "GET" and not form.rate_set.data:
-        form.rate_set.data = DEFAULT_RATE_SET
-    if form.validate_on_submit():
-        br = BeyondRate(
-            rate_set=normalize_rate_set(form.rate_set.data),
-            zone=form.zone.data,
-            rate=form.rate.data,
-            up_to_miles=form.up_to_miles.data,
-        )
-        db.session.add(br)
-        db.session.commit()
-        flash("Beyond rate created.", "success")
-        return redirect(url_for("admin.list_beyond_rates"))
-    return render_template("admin_beyond_rate_form.html", form=form, beyond_rate=None)
-
-
-@admin_bp.route("/beyond_rates/<int:br_id>/edit", methods=["GET", "POST"])
-@super_admin_required
-def edit_beyond_rate(br_id: int) -> Union[str, Response]:
-    """Edit an existing beyond rate entry.
-
-    Fetches the :class:`BeyondRate` by ID and binds it to :class:`BeyondRateForm`.
-    Renders ``admin_beyond_rate_form.html`` for GET requests or validation
-    failures.
-    """
-    br = db.session.get(BeyondRate, br_id)
-    if not br:
-        abort(404)
-    form = BeyondRateForm(obj=br)
-    _populate_rate_set_choices(form)
-    if form.validate_on_submit():
-        br.rate_set = normalize_rate_set(form.rate_set.data)
-        br.zone = form.zone.data
-        br.rate = form.rate.data
-        br.up_to_miles = form.up_to_miles.data
-        db.session.commit()
-        flash("Beyond rate updated.", "success")
-        return redirect(url_for("admin.list_beyond_rates"))
-    return render_template("admin_beyond_rate_form.html", form=form, beyond_rate=br)
-
-
-@admin_bp.route("/beyond_rates/<int:br_id>/delete", methods=["POST"])
-@super_admin_required
-def delete_beyond_rate(br_id: int) -> Response:
-    """Delete a beyond rate entry.
-
-    Operates on the :class:`BeyondRate` model and redirects to the list view
-    without rendering a template.
-    """
-    br = db.session.get(BeyondRate, br_id)
-    if not br:
-        abort(404)
-    db.session.delete(br)
-    db.session.commit()
-    flash("Beyond rate deleted.", "success")
-    return redirect(url_for("admin.list_beyond_rates"))
-
-
-# Hotshot rate routes
-@admin_bp.route("/hotshot_rates")
-@super_admin_required
-def list_hotshot_rates() -> str:
-    """List all hotshot rate entries.
-
-    Queries the :class:`HotshotRate` model and renders
-    ``admin_hotshot_rates.html``.
-    """
-    rates = HotshotRate.query.order_by(HotshotRate.rate_set, HotshotRate.id).all()
-    return render_template("admin_hotshot_rates.html", hotshot_rates=rates)
-
-
-@admin_bp.route("/hotshot_rates/new", methods=["GET", "POST"])
-@super_admin_required
-def new_hotshot_rate() -> Union[str, Response]:
-    """Create a new hotshot rate entry.
-
-    Uses :class:`HotshotRateForm` to build a :class:`HotshotRate`. Renders
-    ``admin_hotshot_rate_form.html`` for the form or validation errors.
-    """
-    form = HotshotRateForm()
-    _populate_rate_set_choices(form)
-    if request.method == "GET" and not form.rate_set.data:
-        form.rate_set.data = DEFAULT_RATE_SET
-    if form.validate_on_submit():
-        hs = HotshotRate(
-            rate_set=normalize_rate_set(form.rate_set.data),
-            miles=form.miles.data,
-            zone=form.zone.data,
-            per_lb=form.per_lb.data,
-            per_mile=form.per_mile.data,
-            min_charge=form.min_charge.data,
-            weight_break=form.weight_break.data,
-            fuel_pct=form.fuel_pct.data,
-        )
-        db.session.add(hs)
-        db.session.commit()
-        flash("Hotshot rate created.", "success")
-        return redirect(url_for("admin.list_hotshot_rates"))
-    return render_template("admin_hotshot_rate_form.html", form=form, hotshot_rate=None)
-
-
-@admin_bp.route("/hotshot_rates/<int:hs_id>/edit", methods=["GET", "POST"])
-@super_admin_required
-def edit_hotshot_rate(hs_id: int) -> Union[str, Response]:
-    """Edit an existing hotshot rate entry.
-
-    Retrieves a :class:`HotshotRate` by ID and binds it to
-    :class:`HotshotRateForm`. Renders ``admin_hotshot_rate_form.html`` when
-    displaying the form or on validation failure.
-    """
-    hs = db.session.get(HotshotRate, hs_id)
-    if not hs:
-        abort(404)
-    form = HotshotRateForm(obj=hs)
-    _populate_rate_set_choices(form)
-    if form.validate_on_submit():
-        hs.rate_set = normalize_rate_set(form.rate_set.data)
-        hs.miles = form.miles.data
-        hs.zone = form.zone.data
-        hs.per_lb = form.per_lb.data
-        hs.per_mile = form.per_mile.data
-        hs.min_charge = form.min_charge.data
-        hs.weight_break = form.weight_break.data
-        hs.fuel_pct = form.fuel_pct.data
-        db.session.commit()
-        flash("Hotshot rate updated.", "success")
-        return redirect(url_for("admin.list_hotshot_rates"))
-    return render_template("admin_hotshot_rate_form.html", form=form, hotshot_rate=hs)
-
-
-@admin_bp.route("/hotshot_rates/<int:hs_id>/delete", methods=["POST"])
-@super_admin_required
-def delete_hotshot_rate(hs_id: int) -> Response:
-    """Delete a hotshot rate entry.
-
-    Operates on the :class:`HotshotRate` model and redirects to the list view
-    without rendering a template.
-    """
-    hs = db.session.get(HotshotRate, hs_id)
-    if not hs:
-        abort(404)
-    db.session.delete(hs)
-    db.session.commit()
-    flash("Hotshot rate deleted.", "success")
-    return redirect(url_for("admin.list_hotshot_rates"))
-
-
-# Zip zone routes
-@admin_bp.route("/zip_zones")
-@super_admin_required
-def list_zip_zones() -> str:
-    """List all ZIP code zone mappings."""
-
-    zones = ZipZone.query.order_by(ZipZone.id).all()
-    return render_template("admin_zip_zones.html", zip_zones=zones)
-
-
-@admin_bp.route("/zip_zones/new", methods=["GET", "POST"])
-@super_admin_required
-def new_zip_zone() -> Union[str, Response]:
-    """Create a new ZIP zone mapping."""
-
-    form = ZipZoneForm()
-    if form.validate_on_submit():
-        zz = ZipZone(
-            zipcode=form.zipcode.data,
-            dest_zone=form.dest_zone.data,
-            beyond=form.beyond.data,
-        )
-        db.session.add(zz)
-        db.session.commit()
-        flash("ZIP zone created.", "success")
-        return redirect(url_for("admin.list_zip_zones"))
-    return render_template("admin_zip_zone_form.html", form=form, zip_zone=None)
-
-
-@admin_bp.route("/zip_zones/<int:zz_id>/edit", methods=["GET", "POST"])
-@super_admin_required
-def edit_zip_zone(zz_id: int) -> Union[str, Response]:
-    """Edit an existing ZIP zone mapping."""
-
-    zz = db.session.get(ZipZone, zz_id)
-    if not zz:
-        abort(404)
-    form = ZipZoneForm(obj=zz)
-    if form.validate_on_submit():
-        zz.zipcode = form.zipcode.data
-        zz.dest_zone = form.dest_zone.data
-        zz.beyond = form.beyond.data
-        db.session.commit()
-        flash("ZIP zone updated.", "success")
-        return redirect(url_for("admin.list_zip_zones"))
-    return render_template("admin_zip_zone_form.html", form=form, zip_zone=zz)
-
-
-@admin_bp.route("/zip_zones/<int:zz_id>/delete", methods=["POST"])
-@super_admin_required
-def delete_zip_zone(zz_id: int) -> Response:
-    """Delete a ZIP zone mapping."""
-
-    zz = db.session.get(ZipZone, zz_id)
-    if not zz:
-        abort(404)
-    db.session.delete(zz)
-    db.session.commit()
-    flash("ZIP zone deleted.", "success")
-    return redirect(url_for("admin.list_zip_zones"))
-
-
 # Cost zone routes
 @admin_bp.route("/cost_zones")
 @super_admin_required
@@ -1558,80 +1011,6 @@ def delete_cost_zone(cz_id: int) -> Response:
     return redirect(url_for("admin.list_cost_zones"))
 
 
-# Air cost zone routes
-@admin_bp.route("/air_cost_zones")
-@super_admin_required
-def list_air_cost_zones() -> str:
-    """List all air cost zone entries."""
-
-    zones = AirCostZone.query.order_by(AirCostZone.rate_set, AirCostZone.id).all()
-    return render_template("admin_air_cost_zones.html", air_cost_zones=zones)
-
-
-@admin_bp.route("/air_cost_zones/new", methods=["GET", "POST"])
-@super_admin_required
-def new_air_cost_zone() -> Union[str, Response]:
-    """Create a new air cost zone entry."""
-
-    form = AirCostZoneForm()
-    _populate_rate_set_choices(form)
-    if request.method == "GET" and not form.rate_set.data:
-        form.rate_set.data = DEFAULT_RATE_SET
-    if form.validate_on_submit():
-        acz = AirCostZone(
-            rate_set=normalize_rate_set(form.rate_set.data),
-            zone=form.zone.data,
-            min_charge=form.min_charge.data,
-            per_lb=form.per_lb.data,
-            weight_break=form.weight_break.data,
-        )
-        db.session.add(acz)
-        db.session.commit()
-        flash("Air cost zone created.", "success")
-        return redirect(url_for("admin.list_air_cost_zones"))
-    return render_template(
-        "admin_air_cost_zone_form.html", form=form, air_cost_zone=None
-    )
-
-
-@admin_bp.route("/air_cost_zones/<int:acz_id>/edit", methods=["GET", "POST"])
-@super_admin_required
-def edit_air_cost_zone(acz_id: int) -> Union[str, Response]:
-    """Edit an existing air cost zone entry."""
-
-    acz = db.session.get(AirCostZone, acz_id)
-    if not acz:
-        abort(404)
-    form = AirCostZoneForm(obj=acz)
-    _populate_rate_set_choices(form)
-    if form.validate_on_submit():
-        acz.rate_set = normalize_rate_set(form.rate_set.data)
-        acz.zone = form.zone.data
-        acz.min_charge = form.min_charge.data
-        acz.per_lb = form.per_lb.data
-        acz.weight_break = form.weight_break.data
-        db.session.commit()
-        flash("Air cost zone updated.", "success")
-        return redirect(url_for("admin.list_air_cost_zones"))
-    return render_template(
-        "admin_air_cost_zone_form.html", form=form, air_cost_zone=acz
-    )
-
-
-@admin_bp.route("/air_cost_zones/<int:acz_id>/delete", methods=["POST"])
-@super_admin_required
-def delete_air_cost_zone(acz_id: int) -> Response:
-    """Delete an air cost zone entry."""
-
-    acz = db.session.get(AirCostZone, acz_id)
-    if not acz:
-        abort(404)
-    db.session.delete(acz)
-    db.session.commit()
-    flash("Air cost zone deleted.", "success")
-    return redirect(url_for("admin.list_air_cost_zones"))
-
-
 @admin_bp.route("/<string:table>/upload", methods=["GET", "POST"])
 @super_admin_required
 def upload_csv(table: str) -> Union[str, Response]:
@@ -1640,8 +1019,8 @@ def upload_csv(table: str) -> Union[str, Response]:
     The expected column headers are defined in :data:`TABLE_SPECS`. Uploads
     with mismatched headers are rejected to guarantee the template matches the
     database schema. When appending to tables that have a natural key, such as
-    :class:`~app.models.ZipZone.zipcode`, duplicates are skipped using
-    :func:`scripts.import_air_rates.save_unique`.
+    configured with ``unique_attr`` in :data:`TABLE_SPECS`, duplicates are skipped
+    using :func:`scripts.import_air_rates.save_unique`.
     """
 
     spec = _get_table_spec(table)
@@ -1675,7 +1054,6 @@ def upload_csv(table: str) -> Union[str, Response]:
                         f"({skipped} duplicate row(s) skipped)."
                     )
 
-            db.session.add(RateUpload(table_name=table, filename=file_storage.filename))
             db.session.commit()
             flash(message, "success")
             return redirect(url_for(spec.list_endpoint))

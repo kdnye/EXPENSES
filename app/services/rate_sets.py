@@ -11,14 +11,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Set
 
 from sqlalchemy.exc import OperationalError
 
-from app.database import (
-    Session,
-    HotshotRate,
-    AirCostZone,
-    ZipZone,
-    CostZone,
-    BeyondRate,
-)
+from app.database import Session, CostZone
 
 DEFAULT_RATE_SET = "default"
 
@@ -109,7 +102,7 @@ def get_available_rate_sets() -> List[str]:
     """
 
     discovered: Set[str] = {DEFAULT_RATE_SET, *PRECONFIGURED_RATE_SETS.keys()}
-    for model in (HotshotRate, AirCostZone, ZipZone, CostZone, BeyondRate):
+    for model in (CostZone,):
         discovered.update(_collect_distinct_rate_sets(model))
 
     ordered_sets = [DEFAULT_RATE_SET, *sorted(discovered - {DEFAULT_RATE_SET})]

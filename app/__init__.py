@@ -23,7 +23,7 @@ from flask_session import Session as FlaskSession
 import redis as redispy
 
 from .quote.theme import init_fsi_theme
-from .models import db, User, Quote, HotshotRate
+from .models import db, User, ExpenseReport
 from .services.settings import reload_overrides
 from .services.oidc_client import init_oidc_oauth
 
@@ -255,8 +255,7 @@ def _verify_app_setup(app: Flask) -> List[str]:
     else:
         required_tables = {
             User.__tablename__,
-            Quote.__tablename__,
-            HotshotRate.__tablename__,
+            ExpenseReport.__tablename__,
         }
         for table in required_tables:
             if table not in existing_tables:
