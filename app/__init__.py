@@ -3,19 +3,16 @@ from flask import (
     Flask,
     abort,
     current_app,
-    flash,
     jsonify,
     redirect,
     render_template,
     request,
     url_for,
 )
-from flask_login import LoginManager, current_user, login_required
+from flask_login import LoginManager
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFProtect
-from markupsafe import Markup
-from datetime import datetime
 import os
 from jinja2 import TemplateNotFound
 from sqlalchemy import inspect, text
@@ -25,16 +22,8 @@ from flask.typing import ResponseReturnValue
 from flask_session import Session as FlaskSession
 import redis as redispy
 
-from .quote.distance import get_distance_miles
 from .quote.theme import init_fsi_theme
 from .models import db, User, Quote, HotshotRate
-from .services.mail import (
-    MailRateLimitError,
-    enforce_mail_rate_limit,
-    send_email,
-    validate_sender_domain,
-    user_has_mail_privileges,
-)
 from .services.settings import reload_overrides
 from .services.oidc_client import init_oidc_oauth
 
@@ -240,32 +229,6 @@ def load_user(user_id):
     return db.session.get(User, int(user_id))
 
 
-def build_map_html(origin_zip: str, destination_zip: str) -> Optional[str]:
-    """Return an embedded Google Maps iframe for the given ZIP codes.
-
-    Returns ``None`` if the API key is missing or the ZIPs are invalid.
-    """
-    key = current_app.config.get("GOOGLE_MAPS_API_KEY") or os.getenv(
-        "GOOGLE_MAPS_API_KEY"
-    )
-    if not key:
-        return None
-
-    o = "".join(ch for ch in str(origin_zip).strip() if ch.isdigit())
-    d = "".join(ch for ch in str(destination_zip).strip() if ch.isdigit())
-    if len(o) != 5 or len(d) != 5:
-        return None
-
-    src = (
-        "https://www.google.com/maps/embed/v1/directions"
-        f"?key={key}&origin={o},USA&destination={d},USA"
-    )
-    return (
-        '<iframe width="600" height="450" style="border:0" '
-        f'loading="lazy" allowfullscreen src="{src}"></iframe>'
-    )
-
-
 def _verify_app_setup(app: Flask) -> List[str]:
     """Check for required database tables and templates.
 
@@ -300,7 +263,7 @@ def _verify_app_setup(app: Flask) -> List[str]:
                 app.logger.error(f"SETUP_ERROR: Missing table: {table}")
                 errors.append(f"Missing table: {table}")
 
-    required_templates = ["index.html", "map.html", "new_quote.html", "500.html"]
+    required_templates = ["index.html", "500.html"]
     for tmpl in required_templates:
         try:
             app.jinja_env.get_or_select_template(tmpl)
@@ -311,7 +274,7 @@ def _verify_app_setup(app: Flask) -> List[str]:
 
 
 def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
-    """Application factory for the quote tool.
+    """Application factory for the expense tracking application.
 
     Args:
         config_class: Import path or class used to configure the app.
@@ -537,15 +500,11 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     from .help import help_bp
     from .expenses import expenses_bp
     from .setup import setup_bp
-    from .quotes import quotes_bp
-    from .quote.admin_view import admin_quotes_bp
 
     csrf.exempt(api_bp)
     app.register_blueprint(api_bp, url_prefix="/api")
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp, url_prefix="/admin")
-    app.register_blueprint(admin_quotes_bp, url_prefix="/admin")
-    app.register_blueprint(quotes_bp, url_prefix="/quotes")
     app.register_blueprint(expenses_bp, url_prefix="/expenses")
     app.register_blueprint(help_bp, url_prefix="/help")
     app.register_blueprint(setup_bp)
@@ -597,100 +556,5 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         if not show_config_errors:
             abort(404)
         return jsonify({"errors": raw_config_errors})
-
-    @app.route("/map", methods=["POST"])
-    def map_view():
-        origin_zip = (request.form.get("origin_zip") or "").strip()
-        dest_zip = (request.form.get("destination_zip") or "").strip()
-        html = build_map_html(origin_zip, dest_zip)
-        if html is None:
-            flash("Could not locate one or both ZIP codes.", "warning")
-            return redirect(url_for("index"))
-        return render_template("map.html", map_html=Markup(html))
-
-    @app.route("/send", methods=["POST"])
-    @login_required
-    def send_email_route() -> ResponseReturnValue:
-        """Send a quote summary email on behalf of an authenticated user.
-
-        Inputs:
-            origin_zip: ZIP code for the quote origin provided via form data.
-            destination_zip: ZIP code for the quote destination provided via form data.
-            email: Recipient email address submitted in the POST body.
-
-        Returns:
-            A redirect response back to :func:`quotes.new_quote` or
-            :func:`index`, depending on validation outcomes.
-
-        External dependencies:
-            * :func:`services.mail.user_has_mail_privileges` to restrict usage
-              to Freight Services staff accounts.
-            * :func:`send_email` for the actual SMTP dispatch.
-        """
-        origin_zip = (request.form.get("origin_zip") or "").strip()
-        dest_zip = (request.form.get("destination_zip") or "").strip()
-        email = (request.form.get("email") or "").strip()
-
-        if not user_has_mail_privileges(current_user):
-            flash(
-                "Quote emails are limited to Freight Services staff accounts.",
-                "warning",
-            )
-            return redirect(url_for("quotes.new_quote"))
-
-        if not email:
-            flash("Recipient email is required to send a quote.", "warning")
-            return redirect(url_for("index"))
-
-        miles = get_distance_miles(origin_zip, dest_zip)
-        miles_text = f"{miles:,.2f} miles" if miles is not None else "N/A"
-
-        subject = f"Quote for {origin_zip} \u2192 {dest_zip}"
-        body = (
-            "Quote Details\n\n"
-            f"Origin ZIP: {origin_zip}\n"
-            f"Destination ZIP: {dest_zip}\n"
-            f"Estimated Distance: {miles_text}\n"
-            f"Generated: {datetime.utcnow().isoformat()}Z\n"
-        )
-
-        try:
-            if os.getenv("CELERY_BROKER_URL"):
-                try:
-                    from worker.email_tasks import send_email_task
-
-                    uid = (
-                        current_user.get_id()
-                        if getattr(current_user, "is_authenticated", False)
-                        else None
-                    )
-                    send_email_task.delay(email, subject, body, "quote_email", uid)
-                    flash("Quote email queued for delivery.", "success")
-                except Exception as exc:  # pragma: no cover - guarded fallback
-                    current_app.logger.exception("Failed to queue email task: %s", exc)
-                    send_email(
-                        email,
-                        subject,
-                        body,
-                        feature="quote_email",
-                        user=current_user,
-                    )
-                    flash("Quote email sent (fallback).", "success")
-            else:
-                send_email(
-                    email,
-                    subject,
-                    body,
-                    feature="quote_email",
-                    user=current_user,
-                )
-                flash("Quote email sent.", "success")
-        except MailRateLimitError as exc:
-            flash(str(exc), "warning")
-        except Exception as e:
-            current_app.logger.exception("Email send failed: %s", e)
-            flash("Failed to send email. Check SMTP settings.", "danger")
-
-        return redirect(url_for("index"))
 
     return app
