@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Help Center · Quote Tool{% endblock %}
+{% block title %}Help Center · Expense Reporting{% endblock %}
 
 {% block content %}
 <div class="row">
@@ -27,7 +27,7 @@
     <p class="text-muted">{{ selected_topic.summary }}</p>
     {% if selected_topic.slug == "getting-started" %}
     <div class="alert alert-info" role="alert">
-      Need a step-by-step tour of the registration form?
+      Need a step-by-step tour of account registration?
       <a class="alert-link" href="{{ url_for('help.account_setup_guide') }}"
         >Open the Account Setup guide.</a
       >
@@ -39,14 +39,15 @@
       {% endfor %}
     </ul>
     {% else %}
-    <h2>Welcome to the Quote Tool Help Center</h2>
+    <h2>Welcome to the Expense Reporting Help Center</h2>
     <p class="text-muted">
-      Choose a topic on the left to explore quick tips for getting started, creating quotes,
-      booking freight, and managing your account.
+      Choose a topic on the left to review account setup, report submission, supervisor review,
+      approvals, receipts, and account security.
     </p>
     <p>
-      Each guide highlights the workflows our operations team uses most often, so you can move
-      from quoting to booking with confidence.
+      Need the complete lifecycle at a glance? Open the
+      <a href="{{ url_for('help.expense_workflow') }}">Expense Workflow quick reference</a>
+      for a single-page checklist.
     </p>
     <p>
       Locked out of your account? Follow the
@@ -56,7 +57,7 @@
     <p>
       Brand-new to the platform? Review the
       <a href="{{ url_for('help.account_setup_guide') }}">Account Setup guide</a>
-      for the required fields and confirmation emails you&apos;ll receive after registering.
+      for the required fields and confirmation emails you'll receive after registering.
     </p>
     {% endif %}
   </div>

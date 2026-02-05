@@ -2,10 +2,7 @@
 
 This repository contains a Flask-based **employee expense reporting application**.
 It helps employees submit expense reports, supervisors review and approve them,
-and administrators manage policy, users, and system settings.
-
-> Note: The codebase also contains legacy freight-quote modules. The primary
-> product direction documented here is the employee expense workflow.
+and administrators manage access and policy settings.
 
 ## What the app does
 
@@ -15,46 +12,78 @@ and administrators manage policy, users, and system settings.
 - Admin dashboards for user and settings management
 - Audit-friendly persistence of submitted reports and status changes
 
-## Core user flows
+## Architecture overview
 
-1. **Employee submits a report**
-   - Create a new expense report
-   - Add expense details and submit for review
-2. **Supervisor reviews**
-   - View pending reports
-   - Approve or reject with feedback
-3. **Employee tracks status**
-   - Monitor report status and review outcomes
+### Application modules
 
-## Project structure
+- `app/flask_app.py`: Flask app wiring and blueprint registration
+- `app/auth.py`: authentication, registration, and password reset flows
+- `app/expenses.py`: employee and supervisor expense-report routes
+- `app/admin.py`: administrator-only user/settings pages
+- `app/help.py`: help-center routes and expense workflow documentation
+- `app/services/expense_workflow.py`: business logic for report submission and approval lifecycle
+- `app/models.py`: SQLAlchemy models for users and expense reporting records
 
-- `flask_app.py`, `app.py`, `expenses.py`: application entrypoints and expense routes
-- `services/expense_workflow.py`: workflow logic for report lifecycle actions
-- `templates/expenses/`: employee and supervisor expense UI templates
-- `models.py`: persistence models used by authentication and expense workflows
-- `tests/`: automated tests, including expense workflow and form validation coverage
+### UI templates
+
+- `templates/expenses/`: employee report creation/list and supervisor review screens
+- `templates/help/`: onboarding, password reset, and expense-process guidance
+- `templates/auth/`: account administration and permission management UI
+
+## Route map and permissions
+
+### Public routes
+
+- `/` - landing page
+- `/register` - account request form
+- `/login` - sign-in page
+
+### Authenticated employee routes
+
+- `/expenses/my-reports` - list personal expense reports and statuses
+- `/expenses/new` - create and submit expense reports
+
+### Authenticated supervisor routes
+
+- `/expenses/supervisor-dashboard` - queue of reports awaiting review
+- `/expenses/review/<report_id>` - approve or reject with feedback
+
+### Administrator routes
+
+- `/admin/` - admin dashboard
+- `/admin/users` and related user-management routes
+- `/settings` - application settings and policy-related configuration
+
+### Help routes
+
+- `/help/` - help center home
+- `/help/expense-workflow` - end-to-end expense reporting quick reference
+- `/help/password-reset` - password reset walkthrough
+- `/help/register` - account setup guide
+
+## Onboarding checklist
+
+1. Register a new account from `/register`.
+2. Wait for administrator approval and role assignment.
+3. Sign in at `/login`.
+4. Open `/expenses/my-reports` and create your first report.
+5. Attach receipts and submit for supervisor review.
+6. Track status updates until approved or revise if rejected.
 
 ## Local development
 
-1. Use **Python 3.8+**
+1. Use **Python 3.8+**.
 2. Install dependencies:
    ```bash
    pip install -r requirements-dev.txt
    ```
-3. Configure environment variables (`.env`) for database, secret key, and app settings
-4. Run database setup/migrations as needed
+3. Configure environment variables (`.env`) for database, secret key, and app settings.
+4. Run database setup/migrations as needed.
 5. Start the app locally:
    ```bash
    python flask_app.py
    ```
-6. Open the app in your browser and navigate to the expense reporting pages
-
-
-## Legacy quote data cleanup
-
-Legacy quote maintenance tables (accessorials, hotshot rates, beyond rates, air cost zones, ZIP zones, and rate upload logs) have been retired from the admin UI and ORM model layer.
-
-A migration script is provided at `migrations/versions/20260205_01_archive_and_drop_legacy_quote_tables.py` that archives each retired table into an `archive_<table>_<revision>` backup table before dropping the original table.
+6. Open the app in your browser and navigate to the expense reporting pages.
 
 ## Testing
 
@@ -67,4 +96,4 @@ pytest
 ## Additional docs
 
 - [ARCHITECTURE.md](ARCHITECTURE.md): technical architecture focused on expense reporting
-- [DEPLOYMENT.md](DEPLOYMENT.md): deployment guide for running this app in production
+- [DEPLOYMENT.md](DEPLOYMENT.md): deployment guide for production environments
