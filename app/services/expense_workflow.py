@@ -20,6 +20,22 @@ from werkzeug.utils import secure_filename
 from app.models import ExpenseReport
 
 
+class ExpenseReferenceDataError(RuntimeError):
+    """Raised when the runtime expense reference workbook cannot be consumed.
+
+    Inputs:
+        message: Operator-facing guidance that explains why workbook access
+            failed and how to remediate the runtime deployment.
+
+    Outputs:
+        A domain-specific exception consumed by route handlers to avoid
+        unhandled 500 errors for workbook-related failures.
+
+    External dependencies:
+        None.
+    """
+
+
 @dataclass(frozen=True)
 class GLAccountOption:
     """Searchable GL account option sourced from the reference workbook."""
@@ -32,17 +48,67 @@ class GLAccountOption:
 def _workbook_path() -> Path:
     """Return the canonical workbook path used to mirror spreadsheet workflows."""
 
-    return (
-        Path(current_app.root_path).parent
-        / "expense_report_template.xlsx"
-    )
+    return Path(current_app.root_path).parent / "expense_report_template.xlsx"
+
+
+def _load_reference_workbook(*, required_sheet: str) -> openpyxl.Workbook:
+    """Load the shared workbook and return it when the required sheet exists.
+
+    Inputs:
+        required_sheet: Worksheet name that must be available for the caller,
+            such as ``GL Accounts`` or ``Data List``.
+
+    Outputs:
+        An open :class:`openpyxl.workbook.workbook.Workbook` object in
+        read-only mode. Callers must close it after reading values.
+
+    External dependencies:
+        * Calls :func:`app.services.expense_workflow._workbook_path` to resolve
+          the expected runtime path.
+        * Calls :func:`openpyxl.load_workbook` to read spreadsheet data.
+    """
+
+    workbook_path = _workbook_path()
+    expected_sheets = ("GL Accounts", "Data List")
+
+    try:
+        workbook = openpyxl.load_workbook(
+            workbook_path,
+            read_only=True,
+            data_only=True,
+        )
+    except (
+        FileNotFoundError,
+        openpyxl.utils.exceptions.InvalidFileException,
+        OSError,
+    ) as exc:
+        raise ExpenseReferenceDataError(
+            "Expense reference workbook could not be loaded. "
+            f"Expected file: '{workbook_path}'. "
+            f"Required sheets: {', '.join(expected_sheets)}. "
+            "Ensure the workbook exists and is a valid .xlsx file on the "
+            "application host."
+        ) from exc
+
+    try:
+        workbook[required_sheet]
+    except KeyError as exc:
+        workbook.close()
+        raise ExpenseReferenceDataError(
+            "Expense reference workbook is missing required sheet data. "
+            f"Expected file: '{workbook_path}'. "
+            f"Required sheets: {', '.join(expected_sheets)}. "
+            "Verify the deployed workbook matches the template structure."
+        ) from exc
+
+    return workbook
 
 
 @lru_cache(maxsize=1)
 def load_gl_accounts() -> Tuple[GLAccountOption, ...]:
     """Read GL account values from the workbook ``GL Accounts`` sheet."""
 
-    workbook = openpyxl.load_workbook(_workbook_path(), read_only=True, data_only=True)
+    workbook = _load_reference_workbook(required_sheet="GL Accounts")
     sheet = workbook["GL Accounts"]
     values: List[GLAccountOption] = []
     for row in sheet.iter_rows(min_row=2, values_only=True):
@@ -60,7 +126,7 @@ def load_gl_accounts() -> Tuple[GLAccountOption, ...]:
 def load_expense_types() -> Tuple[str, ...]:
     """Read standardized expense types from the workbook ``Data List`` sheet."""
 
-    workbook = openpyxl.load_workbook(_workbook_path(), read_only=True, data_only=True)
+    workbook = _load_reference_workbook(required_sheet="Data List")
     sheet = workbook["Data List"]
     values: List[str] = []
     for row in sheet.iter_rows(min_row=2, values_only=True):
