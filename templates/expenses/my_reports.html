@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}My Expense Reports{% endblock %}
+{% block content %}
+<h1 class="h3">My Expense Reports</h1>
+<a class="btn btn-primary mb-3" href="{{ url_for('expenses.new_expense') }}">Create Report</a>
+<div class="table-responsive">
+  <table class="table table-striped">
+    <thead><tr><th>ID</th><th>Month</th><th>Status</th><th>Supervisor</th><th>Updated</th></tr></thead>
+    <tbody>
+      {% for report in reports %}
+      <tr>
+        <td>{{ report.id }}</td>
+        <td>{{ report.report_month.strftime('%Y-%m') }}</td>
+        <td>{{ report.status }}</td>
+        <td>{{ report.supervisor.first_name or report.supervisor.email }}</td>
+        <td>{{ report.updated_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text-muted">No reports yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -546,7 +546,14 @@ def register() -> Union[str, Response]:
             flash("Invalid email address.", "warning")
             return redirect(url_for("auth.register"))
 
-        freight_employee_signup = email.endswith("@freightservices.net")
+        freight_employee_signup = email.endswith(_employee_email_suffix())
+
+        if not freight_employee_signup:
+            flash(
+                f"Registration is restricted to internal accounts ending in {_employee_email_suffix()}.",
+                "warning",
+            )
+            return redirect(url_for("auth.register"))
 
         if password != confirm_password:
             flash("Passwords do not match.", "warning")

@@ -8,6 +8,7 @@ Flask-Limiter==3.5.1
 folium>=0.16
 geopy>=2.4
 google-cloud-secret-manager==2.24.0
+google-cloud-storage==2.18.2
 gunicorn==22.0.0
 hypercorn>=0.15.0
 h2>=4.0.0
@@ -27,3 +28,5 @@ redis>=5
 
 Flask-Session==0.5.0
 celery==5.3.1
+
+paramiko==3.4.0

@@ -26,6 +26,8 @@ from app.models import (
     ZipZone,
     CostZone,
     RateUpload,
+    ExpenseReport,
+    ExpenseLine,
 )
 
 
@@ -152,6 +154,8 @@ __all__ = [
     "ZipZone",
     "CostZone",
     "RateUpload",
+    "ExpenseReport",
+    "ExpenseLine",
     "ensure_database_schema",
 ]
 

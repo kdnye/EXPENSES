@@ -396,3 +396,33 @@ the database.
 ## Architecture
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for an overview of the application's components and guidance on rebuilding the app in another stack.
+
+## Expense workflow implementation reference
+
+The expense module is built from the workbook in the repository root:
+
+- `Dave Alexander Expense Report 12.12.2023.xlsx`
+
+Use the following sheets as implementation references:
+
+- **Blank Expense Report**: Mirrors the web line-entry layout (Date, Type,
+  Account, Description, Company/Names, Amount, Receipt Link).
+- **GL Accounts**: Source for GL account search/dropdown values so each line is
+  pre-coded for NetSuite.
+- **Data List**: Source of standard expense type categories.
+
+### Expense reimbursement policy highlights used by the app
+
+- Meal receipts are required; when missing, meal reimbursement caps apply
+  (Breakfast `$10`, Lunch `$15`, Dinner `$25`).
+- Mileage reimbursement should use the IRS rate for miles beyond base commute.
+- Domestic airfare reimbursement is coach-only.
+- International airfare may use business class only for continuous flights over
+  8 hours.
+- Car rental defaults to compact class; mid-size requires multi-employee travel
+  or exception.
+- Laundry reimbursement applies only for trips longer than 7 full days.
+- Non-reimbursable categories include traffic fines, personal sundries, and
+  personal entertainment.
+- Approval path is supervisor review first, then Vice President of Operations
+  approval before final upload.

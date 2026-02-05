@@ -1,0 +1,172 @@
+"""Expense workflow helpers for spreadsheet lookups, uploads, and dispatch."""
+
+from __future__ import annotations
+
+import csv
+import io
+import os
+import uuid
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+from typing import List, Sequence, Tuple
+
+import openpyxl
+import paramiko
+from flask import current_app
+from werkzeug.datastructures import FileStorage
+from werkzeug.utils import secure_filename
+
+from app.models import ExpenseReport
+
+
+@dataclass(frozen=True)
+class GLAccountOption:
+    """Searchable GL account option sourced from the reference workbook."""
+
+    account: str
+    label: str
+
+
+@lru_cache(maxsize=1)
+def _workbook_path() -> Path:
+    """Return the canonical workbook path used to mirror spreadsheet workflows."""
+
+    return (
+        Path(current_app.root_path).parent
+        / "Dave Alexander Expense Report 12.12.2023.xlsx"
+    )
+
+
+@lru_cache(maxsize=1)
+def load_gl_accounts() -> Tuple[GLAccountOption, ...]:
+    """Read GL account values from the workbook ``GL Accounts`` sheet."""
+
+    workbook = openpyxl.load_workbook(_workbook_path(), read_only=True, data_only=True)
+    sheet = workbook["GL Accounts"]
+    values: List[GLAccountOption] = []
+    for row in sheet.iter_rows(min_row=2, values_only=True):
+        account = str(row[0] or "").strip()
+        label = str(row[1] or "").strip()
+        if not account:
+            continue
+        display = f"{account} - {label}" if label else account
+        values.append(GLAccountOption(account=account, label=display))
+    workbook.close()
+    return tuple(values)
+
+
+@lru_cache(maxsize=1)
+def load_expense_types() -> Tuple[str, ...]:
+    """Read standardized expense types from the workbook ``Data List`` sheet."""
+
+    workbook = openpyxl.load_workbook(_workbook_path(), read_only=True, data_only=True)
+    sheet = workbook["Data List"]
+    values: List[str] = []
+    for row in sheet.iter_rows(min_row=2, values_only=True):
+        candidate = str(row[0] or "").strip()
+        if candidate:
+            values.append(candidate)
+    workbook.close()
+    return tuple(values)
+
+
+def upload_receipt_to_cloud_storage(
+    file_storage: FileStorage,
+    *,
+    report_id: int,
+    line_index: int,
+) -> str:
+    """Upload a receipt image to GCS and return its URL.
+
+    This function calls ``google.cloud.storage.Client`` when the
+    ``EXPENSE_RECEIPT_BUCKET`` configuration is present.
+    """
+
+    if not file_storage or not file_storage.filename:
+        return ""
+
+    bucket_name = (current_app.config.get("EXPENSE_RECEIPT_BUCKET") or "").strip()
+    if not bucket_name:
+        return ""
+
+    from google.cloud import storage  # Imported lazily to keep startup fast.
+
+    safe_name = secure_filename(file_storage.filename)
+    extension = Path(safe_name).suffix.lower()
+    unique_name = (
+        f"expense-receipts/{report_id}/{line_index}-{uuid.uuid4().hex}{extension}"
+    )
+
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(unique_name)
+    blob.upload_from_file(
+        file_storage.stream,
+        content_type=file_storage.content_type or "application/octet-stream",
+    )
+    blob.make_public()
+    return blob.public_url
+
+
+def format_pending_reports_csv(reports: Sequence[ExpenseReport]) -> str:
+    """Serialize ``Pending Upload`` reports into a single NetSuite-ready CSV."""
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "report_id",
+            "employee_email",
+            "supervisor_email",
+            "expense_date",
+            "expense_type",
+            "gl_account",
+            "vendor",
+            "description",
+            "amount",
+            "receipt_url",
+        ]
+    )
+
+    for report in reports:
+        for line in report.lines:
+            writer.writerow(
+                [
+                    report.id,
+                    getattr(report.employee, "email", ""),
+                    getattr(report.supervisor, "email", ""),
+                    line.date.isoformat(),
+                    line.expense_type,
+                    line.gl_account,
+                    line.vendor,
+                    line.description or "",
+                    f"{line.amount:.2f}",
+                    line.receipt_url or "",
+                ]
+            )
+
+    return output.getvalue()
+
+
+def dispatch_csv_via_sftp(payload: str, *, filename: str) -> None:
+    """Transmit a generated expense export to the configured NetSuite SFTP host."""
+
+    host = (current_app.config.get("NETSUITE_SFTP_HOST") or "").strip()
+    username = (current_app.config.get("NETSUITE_SFTP_USERNAME") or "").strip()
+    password = (current_app.config.get("NETSUITE_SFTP_PASSWORD") or "").strip()
+    remote_dir = (current_app.config.get("NETSUITE_SFTP_DIRECTORY") or "/").strip()
+    port = int(current_app.config.get("NETSUITE_SFTP_PORT", 22))
+
+    if not host or not username or not password:
+        raise ValueError("NetSuite SFTP credentials are not fully configured.")
+
+    transport = paramiko.Transport((host, port))
+    try:
+        transport.connect(username=username, password=password)
+        client = paramiko.SFTPClient.from_transport(transport)
+        remote_path = f"{remote_dir.rstrip('/')}/{filename}"
+        with client.file(remote_path, "w") as remote_file:
+            remote_file.write(payload)
+    finally:
+        transport.close()

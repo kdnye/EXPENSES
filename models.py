@@ -31,6 +31,8 @@ AIR_COST_ZONES_TABLE = "air_cost_zones"
 ZIP_ZONES_TABLE = "zip_zones"
 COST_ZONES_TABLE = "cost_zones"
 RATE_UPLOADS_TABLE = "rate_uploads"
+EXPENSE_REPORTS_TABLE = "expense_reports"
+EXPENSE_LINES_TABLE = "expense_lines"
 
 RATE_SET_DEFAULT = "default"
 
@@ -75,6 +77,7 @@ class User(UserMixin, db.Model):
     phone = db.Column(db.String(50))
     company_name = db.Column(db.String(120))
     company_phone = db.Column(db.String(50))
+    supervisor_id = db.Column(db.Integer, db.ForeignKey(f"{USERS_TABLE}.id"))
     password_hash = db.Column(db.String(255), nullable=False)
     is_admin = db.Column(db.Boolean, default=False)
     role: Mapped[str] = db.Column(
@@ -95,6 +98,12 @@ class User(UserMixin, db.Model):
         db.String(50), nullable=False, default=RATE_SET_DEFAULT, index=True
     )
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    supervisor = db.relationship(
+        "User",
+        remote_side=[id],
+        backref=db.backref("direct_reports", lazy="dynamic"),
+        foreign_keys=[supervisor_id],
+    )
 
     def set_password(self, raw_password: str) -> None:
         """Hash ``raw_password`` using
@@ -233,8 +242,6 @@ class AppSetting(db.Model):
         onupdate=datetime.utcnow,
         nullable=False,
     )
-
-
 
 
 class PasswordResetToken(db.Model):
@@ -376,3 +383,78 @@ class RateUpload(db.Model):
     table_name = db.Column(db.String(50), nullable=False)
     filename = db.Column(db.String(255), nullable=False)
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ExpenseReport(db.Model):
+    """Expense report header submitted by an employee.
+
+    Each report groups one or more :class:`ExpenseLine` entries. Supervisors
+    review reports as part of a state machine before finance uploads the
+    records to NetSuite.
+    """
+
+    __tablename__ = EXPENSE_REPORTS_TABLE
+
+    id = db.Column(db.Integer, primary_key=True)
+    employee_id = db.Column(
+        db.Integer, db.ForeignKey(f"{USERS_TABLE}.id"), nullable=False
+    )
+    supervisor_id = db.Column(
+        db.Integer, db.ForeignKey(f"{USERS_TABLE}.id"), nullable=False
+    )
+    report_month = db.Column(db.Date, nullable=False)
+    notes = db.Column(db.Text)
+    status: Mapped[str] = db.Column(
+        Enum(
+            "Draft",
+            "Pending Review",
+            "Pending Upload",
+            "Completed",
+            name="expense_report_status",
+        ),
+        nullable=False,
+        default="Draft",
+    )
+    rejection_comment = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    employee = db.relationship("User", foreign_keys=[employee_id])
+    supervisor = db.relationship("User", foreign_keys=[supervisor_id])
+    lines = db.relationship(
+        "ExpenseLine",
+        cascade="all, delete-orphan",
+        backref="report",
+        lazy="joined",
+    )
+
+
+class ExpenseLine(db.Model):
+    """Individual expense row attached to an :class:`ExpenseReport`.
+
+    The columns mirror the spreadsheet-driven workflow used by employees for
+    monthly reimbursement submissions.
+    """
+
+    __tablename__ = EXPENSE_LINES_TABLE
+
+    id = db.Column(db.Integer, primary_key=True)
+    expense_report_id = db.Column(
+        db.Integer,
+        db.ForeignKey(f"{EXPENSE_REPORTS_TABLE}.id"),
+        nullable=False,
+        index=True,
+    )
+    date = db.Column(db.Date, nullable=False)
+    expense_type = db.Column(db.String(120), nullable=False)
+    gl_account = db.Column(db.String(32), nullable=False)
+    vendor = db.Column(db.String(255), nullable=False)
+    amount = db.Column(db.Numeric(10, 2), nullable=False)
+    description = db.Column(db.String(255))
+    receipt_url = db.Column(db.String(1024))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Supervisor Dashboard{% endblock %}
+{% block content %}
+<h1 class="h3">Pending Review</h1>
+<div class="table-responsive">
+  <table class="table table-striped">
+    <thead><tr><th>Report</th><th>Employee</th><th>Month</th><th>Submitted</th><th></th></tr></thead>
+    <tbody>
+      {% for report in reports %}
+      <tr>
+        <td>#{{ report.id }}</td>
+        <td>{{ report.employee.first_name or report.employee.email }}</td>
+        <td>{{ report.report_month.strftime('%Y-%m') }}</td>
+        <td>{{ report.created_at.strftime('%Y-%m-%d') }}</td>
+        <td><a class="btn btn-sm btn-primary" href="{{ url_for('expenses.review_report', report_id=report.id) }}">Review</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text-muted">No reports pending review.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if current_user.role == 'super_admin' %}
+<form method="post" action="{{ url_for('expenses.dispatch_pending_uploads') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+  <button class="btn btn-success">Dispatch Pending Uploads (SFTP)</button>
+  <a class="btn btn-outline-secondary" href="{{ url_for('expenses.export_pending_upload_csv') }}">Download Pending Upload CSV</a>
+</form>
+{% endif %}
+{% endblock %}

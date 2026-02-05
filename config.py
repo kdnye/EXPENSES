@@ -7,6 +7,8 @@ from urllib.parse import parse_qsl, quote_plus, urlencode, urlparse
 
 from sqlalchemy.engine import make_url
 
+from server_config import resolve_secret_value
+
 # Capture configuration errors so the application can start in a safe
 # maintenance mode instead of crashing during import time.
 _CONFIG_ERRORS: List[str] = []
@@ -656,7 +658,7 @@ class Config:
         "y",
     }
     MAIL_USERNAME = os.getenv("MAIL_USERNAME")
-    MAIL_PASSWORD = os.getenv("MAIL_PASSWORD")
+    MAIL_PASSWORD = resolve_secret_value("MAIL_PASSWORD", "MAIL_PASSWORD_SECRET")
     MAIL_ALLOWED_SENDER_DOMAIN = _resolve_mail_allowed_sender_domain(
         MAIL_DEFAULT_SENDER
     )
@@ -694,11 +696,21 @@ class Config:
     API_QUOTE_RATE_LIMIT = os.getenv("API_QUOTE_RATE_LIMIT", "30 per minute")
     OIDC_ISSUER = os.getenv("OIDC_ISSUER")
     OIDC_CLIENT_ID = os.getenv("OIDC_CLIENT_ID")
-    OIDC_CLIENT_SECRET = os.getenv("OIDC_CLIENT_SECRET")
+    OIDC_CLIENT_SECRET = resolve_secret_value(
+        "OIDC_CLIENT_SECRET", "OIDC_CLIENT_SECRET_NAME"
+    )
     OIDC_REDIRECT_URI = os.getenv("OIDC_REDIRECT_URI")
     OIDC_SCOPES = _resolve_oidc_scopes()
     OIDC_AUDIENCE = _resolve_oidc_audience()
     OIDC_ALLOWED_DOMAIN = _resolve_oidc_allowed_domain()
     OIDC_END_SESSION_ENDPOINT = os.getenv("OIDC_END_SESSION_ENDPOINT")
+    EXPENSE_RECEIPT_BUCKET = os.getenv("EXPENSE_RECEIPT_BUCKET", "").strip()
+    NETSUITE_SFTP_HOST = os.getenv("NETSUITE_SFTP_HOST", "").strip()
+    NETSUITE_SFTP_PORT = _get_int_from_env("NETSUITE_SFTP_PORT", 22)
+    NETSUITE_SFTP_USERNAME = os.getenv("NETSUITE_SFTP_USERNAME", "").strip()
+    NETSUITE_SFTP_PASSWORD = resolve_secret_value(
+        "NETSUITE_SFTP_PASSWORD", "NETSUITE_SFTP_PASSWORD_SECRET"
+    )
+    NETSUITE_SFTP_DIRECTORY = os.getenv("NETSUITE_SFTP_DIRECTORY", "/").strip()
 
     CONFIG_ERRORS = list(_CONFIG_ERRORS)
