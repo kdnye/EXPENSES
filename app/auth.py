@@ -1,7 +1,7 @@
 # app/auth.py
 """Define the authentication blueprint and its user-facing routes.
 
-The blueprint wraps the authentication lifecycle for the quote tool:
+The blueprint wraps the authentication lifecycle for the expenses app:
 
 - ``/login`` authenticates existing users and starts a session via
   :func:`flask_login.login_user`.
@@ -250,7 +250,7 @@ def login() -> Union[str, Response]:
 
     Returns:
         Renders ``login.html`` on GET or failed login.
-        Redirects to ``quotes.new_quote`` on success.
+        Redirects to ``expenses.my_reports`` on success.
     """
     oidc_available = is_oidc_configured()
     employee_suffix = _employee_email_suffix()
@@ -272,7 +272,7 @@ def login() -> Union[str, Response]:
             current_app.logger.info(
                 "login successful for %s", getattr(user, "email", "<missing>")
             )
-            return redirect(url_for("quotes.new_quote"))
+            return redirect(url_for("expenses.my_reports"))
         flash("Invalid credentials", "danger")
 
     return render_template(
@@ -325,7 +325,12 @@ def login_oidc() -> Response:
 
 @auth_bp.route("/login/oidc/callback")
 def login_oidc_callback() -> Response:
-    """Handle the OpenID Connect authorization code response."""
+    """Handle the OpenID Connect authorization code response.
+
+    Returns:
+        Redirects employees to ``expenses.my_reports`` when sign-in succeeds,
+        or back to ``auth.login`` when validation fails.
+    """
 
     if not is_oidc_configured():
         flash("Single sign-on is not available.", "warning")
@@ -454,7 +459,7 @@ def login_oidc_callback() -> Response:
         return redirect(url_for("auth.login"))
 
     login_user(user)
-    return redirect(url_for("quotes.new_quote"))
+    return redirect(url_for("expenses.my_reports"))
 
 
 @auth_bp.route("/register", methods=["GET", "POST"])

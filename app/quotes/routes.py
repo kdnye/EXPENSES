@@ -435,7 +435,7 @@ def _render_email_request(
 
     if not user_has_mail_privileges(current_user):
         flash("Email booking is restricted to Freight Services staff.", "warning")
-        return redirect(url_for("quotes.new_quote"))
+        return redirect(url_for("expenses.my_reports"))
 
     quote = Quote.query.filter_by(quote_id=quote_id).first_or_404()
     metadata = json.loads(quote.quote_metadata or "{}")

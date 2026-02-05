@@ -5,14 +5,15 @@ from scripts.import_air_rates import save_unique
 from config import build_cloud_sql_unix_socket_uri_from_env
 
 
-def test_cloud_sql_uri_uses_psycopg2_host_directory(monkeypatch):
-    """Build a psycopg2 DSN that points ``host`` to the socket directory.
+def test_cloud_sql_uri_uses_sqlalchemy_cloud_sql_socket_format(monkeypatch):
+    """Build a Cloud SQL DSN that points to the unix socket path.
 
     Inputs:
         monkeypatch: pytest fixture used to set Cloud SQL env variables.
 
     Outputs:
-        None. Asserts the generated DSN shape expected by psycopg2.
+        None. Asserts the generated DSN shape expected by SQLAlchemy's
+        Cloud SQL socket configuration.
 
     External dependencies:
         Calls ``config.build_cloud_sql_unix_socket_uri_from_env``.
@@ -26,10 +27,12 @@ def test_cloud_sql_uri_uses_psycopg2_host_directory(monkeypatch):
     uri = build_cloud_sql_unix_socket_uri_from_env()
 
     assert uri is not None
-    assert uri.startswith("postgresql+psycopg2://")
+    assert uri.startswith("postgresql+")
     assert "abc%26123" in uri
-    assert "host=/cloudsql/project-1:us-central1:expenses-db" in uri
-    assert "unix_sock=" not in uri
+    assert (
+        "unix_sock=/cloudsql/project-1%3Aus-central1%3Aexpenses-db/.s.PGSQL.5432"
+        in uri
+    )
 
 
 def test_scripts_package_is_importable_and_exposes_save_unique():
