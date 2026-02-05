@@ -39,3 +39,4 @@ build/
 
 # Local and large non-runtime artifacts
 *.xlsx
+!expense_report_template.xlsx
