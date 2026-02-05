@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Expense Workflow · Help Center{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-10 col-xl-8">
+    <h1 class="h2">Expense Reporting Workflow</h1>
+    <p class="text-muted">
+      Use this page as a quick reference for the full expense lifecycle: preparing entries,
+      submitting reports, supervisor review, approval decisions, and receipt standards.
+    </p>
+
+    <div class="card mb-4">
+      <div class="card-body">
+        <h2 class="h4">1) Submit a complete report</h2>
+        <ul class="mb-0">
+          <li>Create a report from <strong>My Reports</strong> and add each expense line with date, amount, and business purpose.</li>
+          <li>Check totals and category labels before clicking <strong>Submit</strong>.</li>
+          <li>Include context in notes for uncommon purchases to reduce back-and-forth during review.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-body">
+        <h2 class="h4">2) Supervisor review</h2>
+        <ul class="mb-0">
+          <li>Supervisors review pending reports from the dashboard assigned to their team.</li>
+          <li>They validate policy compliance, spending reasonableness, and documentation quality.</li>
+          <li>Missing details usually result in rejection comments so the employee can update and resubmit.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-body">
+        <h2 class="h4">3) Approvals and status changes</h2>
+        <ul class="mb-0">
+          <li><strong>Draft</strong>: report is still editable by the employee.</li>
+          <li><strong>Submitted</strong>: report is queued for supervisor action.</li>
+          <li><strong>Approved</strong> or <strong>Rejected</strong>: final decision with optional reviewer comments.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-body">
+        <h2 class="h4">4) Receipt checklist</h2>
+        <ul class="mb-0">
+          <li>Ensure every uploaded receipt clearly shows vendor, date, amount, and payment method.</li>
+          <li>Attach legible files and avoid blurry screenshots or cropped totals.</li>
+          <li>When no receipt exists, include an explanation in report notes and follow your reimbursement policy.</li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="text-center">
+      <a class="btn btn-outline-primary" href="{{ url_for('help.help_index') }}">Back to Help Center</a>
+      <a class="btn btn-primary ms-2" href="{{ url_for('expenses.my_reports') }}">Open My Reports</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

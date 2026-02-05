@@ -25,44 +25,66 @@ HELP_TOPICS: Final[List[HelpTopic]] = [
         "slug": "getting-started",
         "title": "Getting Started",
         "endpoint": "help.getting_started",
-        "summary": "Create your account and learn the basics of navigating the quote tool.",
+        "summary": "Set up your account and learn where to submit expense reports.",
         "details": [
-            "Visit the registration page to request account access from your Freight Services Inc. administrator.",
-            "Confirm your email address and sign in from the login page to access the quoting dashboard.",
-            "Review your profile details from the user menu so that automated emails include your preferred signature.",
+            "Register from the account request page, then wait for administrator approval before your first sign-in.",
+            "After login, open My Reports to review past submissions and start a new report.",
+            "Keep your profile email and phone current so supervisors can reach you quickly when follow-up is needed.",
         ],
     },
     {
-        "slug": "quoting",
-        "title": "Quoting",
-        "endpoint": "help.quoting",
-        "summary": "Generate accurate spot quotes with distance calculations and surcharges.",
+        "slug": "report-submission",
+        "title": "Report Submission",
+        "endpoint": "help.report_submission",
+        "summary": "Build complete expense reports with clear descriptions and totals.",
         "details": [
-            "Open the New Quote form and provide origin, destination, and equipment details for the shipment.",
-            "Use the distance preview on the map page to verify mileage before finalizing the quote email.",
-            "Send the generated quote via email directly from the tool or download a PDF copy for your records.",
+            "Use New Expense Report to enter date, category, amount, and business purpose for each expense item.",
+            "Review totals before submitting so your supervisor sees an accurate request the first time.",
+            "Submit only when all required expenses and notes are included, because supervisors evaluate the full report package.",
         ],
     },
     {
-        "slug": "booking",
-        "title": "Booking",
-        "endpoint": "help.booking",
-        "summary": "Finalize shipments once a customer accepts a quote.",
+        "slug": "supervisor-review",
+        "title": "Supervisor Review",
+        "endpoint": "help.supervisor_review",
+        "summary": "Understand how supervisors assess pending reports and request updates.",
         "details": [
-            "Convert an accepted quote into a booking by following your internal dispatch workflow.",
-            "Attach any supporting documents, such as proof of insurance or load confirmations, to the booking record.",
-            "Coordinate with dispatch to schedule drivers and confirm pickup details with the shipper.",
+            "Supervisors open the dashboard to view submitted reports assigned to their team.",
+            "Each review checks policy alignment, receipt quality, and whether the business purpose supports reimbursement.",
+            "If information is missing, supervisors reject with comments so employees can revise and resubmit quickly.",
+        ],
+    },
+    {
+        "slug": "approvals",
+        "title": "Approvals & Statuses",
+        "endpoint": "help.approvals",
+        "summary": "Track what each report status means from draft through final decision.",
+        "details": [
+            "Draft reports are visible only to the employee until submission.",
+            "Submitted reports are locked for supervisor review and move to approved or rejected after evaluation.",
+            "Use My Reports to monitor status changes and read reviewer feedback before making edits.",
+        ],
+    },
+    {
+        "slug": "receipts",
+        "title": "Receipts",
+        "endpoint": "help.receipts",
+        "summary": "Prepare and attach proof-of-purchase documentation that passes review.",
+        "details": [
+            "Upload clear receipt images that show vendor, date, amount, and payment confirmation.",
+            "Combine multi-page receipts before upload when possible so reviewers can verify one expense in one place.",
+            "When a receipt is unavailable, add a short explanation in report notes and follow your reimbursement policy.",
         ],
     },
     {
         "slug": "account-management",
         "title": "Account Management",
         "endpoint": "help.account_management",
-        "summary": "Keep your profile details and notification preferences up to date.",
+        "summary": "Maintain secure access with updated profile details and password hygiene.",
         "details": [
-            "Update your contact information from the profile page so colleagues can reach you quickly.",
-            "Reset your password from the login screen if you forget your credentials or suspect unauthorized access.",
-            "Contact an administrator to enable multi-factor authentication for additional security where available.",
+            "Update your contact information from settings so approval reminders and support messages reach you.",
+            "Use the password reset workflow immediately if you cannot sign in or suspect unauthorized account access.",
+            "Contact an administrator when role changes require supervisor or administrator permissions.",
         ],
     },
 ]
@@ -124,51 +146,68 @@ def getting_started() -> str:
     return _render_help_page(active_topic="getting-started")
 
 
-@help_bp.get("/quoting")
-def quoting() -> str:
-    """Provide quoting tips and workflow references for users.
-
-    Args:
-        None.
+@help_bp.get("/report-submission")
+def report_submission() -> str:
+    """Show report creation and submission guidance.
 
     Returns:
         Rendered HTML string from :func:`_render_help_page` with the
-        ``quoting`` topic highlighted and rendered by
+        ``report-submission`` topic highlighted and rendered by
         :func:`flask.render_template`.
     """
 
-    return _render_help_page(active_topic="quoting")
+    return _render_help_page(active_topic="report-submission")
 
 
-@help_bp.get("/quote-types")
-def quote_types() -> str:
-    """Explain the differences between Hotshot and Air quote types.
+@help_bp.get("/supervisor-review")
+def supervisor_review() -> str:
+    """Show the supervisor-side review lifecycle guidance.
 
-    Args:
-        None.
+    Returns:
+        Rendered HTML string from :func:`_render_help_page` with the
+        ``supervisor-review`` topic highlighted and rendered by
+        :func:`flask.render_template`.
+    """
+
+    return _render_help_page(active_topic="supervisor-review")
+
+
+@help_bp.get("/approvals")
+def approvals() -> str:
+    """Explain report status transitions for approvals and rejections.
+
+    Returns:
+        Rendered HTML string from :func:`_render_help_page` with the
+        ``approvals`` topic highlighted and rendered by
+        :func:`flask.render_template`.
+    """
+
+    return _render_help_page(active_topic="approvals")
+
+
+@help_bp.get("/receipts")
+def receipts() -> str:
+    """Share receipt collection best practices for expense compliance.
+
+    Returns:
+        Rendered HTML string from :func:`_render_help_page` with the
+        ``receipts`` topic highlighted and rendered by
+        :func:`flask.render_template`.
+    """
+
+    return _render_help_page(active_topic="receipts")
+
+
+@help_bp.get("/expense-workflow")
+def expense_workflow() -> str:
+    """Render the full expense reporting workflow quick-reference guide.
 
     Returns:
         Rendered HTML string produced directly from the
-        ``help/quote_types.html`` template via :func:`flask.render_template`.
+        ``help/expense_workflow.html`` template via :func:`flask.render_template`.
     """
 
-    return render_template("help/quote_types.html")
-
-
-@help_bp.get("/booking")
-def booking() -> str:
-    """Outline next steps for booking freight after a quote is accepted.
-
-    Args:
-        None.
-
-    Returns:
-        Rendered HTML string from :func:`_render_help_page` with the
-        ``booking`` topic highlighted and rendered by
-        :func:`flask.render_template`.
-    """
-
-    return _render_help_page(active_topic="booking")
+    return render_template("help/expense_workflow.html")
 
 
 @help_bp.get("/account-management")
@@ -189,12 +228,12 @@ def account_management() -> str:
 
 @help_bp.get("/admin")
 def admin() -> str:
-    """Outline administrator workflows for managing rates and approvals.
+    """Outline administrator workflows for managing approvals and permissions.
 
-    The view renders a standalone administrator guide that covers rate-table
-    configuration, accessorial surcharges, and user approval checkpoints. It
-    relies on :func:`flask.render_template` to display the
-    ``templates/help/admin.html`` document.
+    The view renders a standalone administrator guide that covers approval
+    queues, role management, and policy checkpoints. It relies on
+    :func:`flask.render_template` to display the ``templates/help/admin.html``
+    document.
 
     Returns:
         Rendered HTML string for the administrator help page.

@@ -38,7 +38,7 @@ def test_repository_contains_no_quote_new_quote_references() -> None:
     files_to_check = [
         Path("app/auth.py"),
         Path("app/quotes/routes.py"),
-        Path("templates/help/quote_types.html"),
+        Path("templates/help/expense_workflow.html"),
         Path("templates/quote_result.html"),
     ]
 
