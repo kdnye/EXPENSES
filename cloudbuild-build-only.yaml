@@ -1,5 +1,5 @@
 steps:
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'us-central1-docker.pkg.dev/quote-tool-483716/cloud-run-source-deploy/expenses/expenses:1b0bbdf', '.']
+    args: ['build', '-t', 'us-central1-docker.pkg.dev/quote-tool-483716/cloud-run-source-deploy/expenses/expenses:4d67f2f', '.']
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'us-central1-docker.pkg.dev/quote-tool-483716/cloud-run-source-deploy/expenses/expenses:1b0bbdf']
+    args: ['push', 'us-central1-docker.pkg.dev/quote-tool-483716/cloud-run-source-deploy/expenses/expenses:4d67f2f']

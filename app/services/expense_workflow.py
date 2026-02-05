@@ -34,7 +34,7 @@ def _workbook_path() -> Path:
 
     return (
         Path(current_app.root_path).parent
-        / "Dave Alexander Expense Report 12.12.2023.xlsx"
+        / "expense_report_template.xlsx"
     )
 
 

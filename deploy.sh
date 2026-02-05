@@ -1,0 +1,4 @@
+gcloud run deploy expenses --image=us-central1-docker.pkg.dev/quote-tool-483716/cloud-run-source-deploy/expenses/expenses@sha256:2a4768bc0022db602b4b2a1a82e7bf71ab8bd04ef620e2a0fe027fdfb9f2e469 --region=us-central1 --project=quote-tool-483716 --platform=managed --allow-unauthenticated
+     --add-cloudsql-instances=quote-tool-483716:us-central1:quote-postgres --set-env-vars=ENVIRONMENT=production,FLASK_DEBUG=false,STARTUP_DB_CHECKS=true,HEALTHCHECK_REQUIRE_DB=true
+     --set-secrets=SECRET_KEY=SECRET_KEY:latest,OIDC_CLIENT_ID=OIDC_CLIENT_ID:latest,OIDC_CLIENT_SECRET=OIDC_CLIENT_SECRET:latest,OIDC_ISSUER=OIDC_ISSUER:latest,OIDC_AUDIENCE=OIDC_AUDIENCE:latest,NETSUITE_SFTP_PASSWORD=NETSUITE_SFTP_PASSWORD:latest,NETSUITE_SFTP_PRIVATE_KEY=NETSUITE_SFTP_PRIVATE_KEY:latest,NETSUI
+     _SFTP_PRIVATE_KEY_PASSPHRASE=NETSUITE_SFTP_PRIVATE_KEY_PASSPHRASE:latest,DATABASE_URL=DATABASE_URL:latest --quiet
