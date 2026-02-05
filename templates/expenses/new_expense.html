@@ -46,12 +46,6 @@
   </div>
 </form>
 
-<datalist id="gl-account-options">
-  {% for option in gl_accounts %}
-  <option value="{{ option.account }}">{{ option.label }}</option>
-  {% endfor %}
-</datalist>
-
 <template id="expense-row-template">
   <tr>
     <td><input type="date" class="form-control" name="line_date" required /></td>
@@ -63,7 +57,11 @@
         {% endfor %}
       </select>
     </td>
-    <td><input class="form-control" name="gl_account" list="gl-account-options" placeholder="52070" required /></td>
+    <td>
+      <select class="form-select" name="gl_account" required>
+        <option value="">Loading GL accounts…</option>
+      </select>
+    </td>
     <td><input class="form-control" name="description" maxlength="255" /></td>
     <td><input class="form-control" name="vendor" maxlength="255" required /></td>
     <td><input type="number" class="form-control" name="amount" min="0" step="0.01" required /></td>
@@ -77,6 +75,8 @@
     const tableBody = document.getElementById("expense-lines");
     const template = document.getElementById("expense-row-template");
     const addButton = document.getElementById("add-line-btn");
+    const glAccountsEndpoint = "{{ url_for('expenses.gl_accounts_options') }}";
+    let glAccountOptions = [];
 
     const renameReceiptInputs = () => {
       tableBody.querySelectorAll("tr").forEach((row, index) => {
@@ -87,9 +87,78 @@
       });
     };
 
+    const setAccountCellMessage = (selectElement, message) => {
+      selectElement.innerHTML = "";
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = message;
+      selectElement.appendChild(option);
+      selectElement.disabled = true;
+    };
+
+    const populateAccountSelect = (selectElement) => {
+      selectElement.innerHTML = "";
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "Select account";
+      selectElement.appendChild(placeholder);
+
+      glAccountOptions.forEach((optionData) => {
+        const option = document.createElement("option");
+        option.value = optionData.account;
+        option.textContent = optionData.label;
+        selectElement.appendChild(option);
+      });
+
+      selectElement.disabled = glAccountOptions.length === 0;
+      if (glAccountOptions.length === 0) {
+        placeholder.textContent = "No GL accounts available";
+      }
+    };
+
+    const applyAccountsToExistingRows = () => {
+      tableBody.querySelectorAll('select[name="gl_account"]').forEach((selectElement) => {
+        populateAccountSelect(selectElement);
+      });
+    };
+
+    const fetchGlAccounts = async () => {
+      try {
+        const response = await fetch(glAccountsEndpoint, {
+          method: "GET",
+          headers: { "Accept": "application/json" },
+        });
+        if (!response.ok) {
+          throw new Error(`Failed to load GL accounts (${response.status})`);
+        }
+
+        const payload = await response.json();
+        if (!payload || !Array.isArray(payload.accounts)) {
+          throw new Error("GL accounts response was invalid.");
+        }
+
+        glAccountOptions = payload.accounts.filter((optionData) => {
+          return optionData && optionData.account && optionData.label;
+        });
+        applyAccountsToExistingRows();
+      } catch (error) {
+        console.error(error);
+        tableBody.querySelectorAll('select[name="gl_account"]').forEach((selectElement) => {
+          setAccountCellMessage(selectElement, "Unable to load GL accounts");
+        });
+      }
+    };
+
     const addLine = () => {
       const fragment = template.content.cloneNode(true);
       const row = fragment.querySelector("tr");
+      const accountSelect = row.querySelector('select[name="gl_account"]');
+      if (glAccountOptions.length > 0) {
+        populateAccountSelect(accountSelect);
+      } else {
+        setAccountCellMessage(accountSelect, "Loading GL accounts…");
+      }
+
       row.querySelector(".remove-line-btn").addEventListener("click", () => {
         row.remove();
         renameReceiptInputs();
@@ -100,6 +169,7 @@
 
     addButton.addEventListener("click", addLine);
     addLine();
+    fetchGlAccounts();
   });
 </script>
 {% endblock %}
