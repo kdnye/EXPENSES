@@ -7,24 +7,71 @@ steps:
       - -t
       - ${_IMAGE_URI}
       - .
+
   - name: gcr.io/cloud-builders/docker
     args:
       - push
       - ${_IMAGE_URI}
+
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
-    entrypoint: gcloud
+    id: resolve-image-digest
+    entrypoint: bash
     args:
-      - run
-      - deploy
-      - ${_SERVICE}
-      - --image=${_IMAGE_URI}
-      - --region=${_REGION}
-      - --platform=managed
-      - --allow-unauthenticated
-      - --quiet
+      - -c
+      - |
+        set -euo pipefail
+        DIGEST="$(gcloud artifacts docker images describe "${_IMAGE_URI}" --project="${_PROJECT_ID}" --format='get(image_summary.digest)')"
+        if [[ -z "${DIGEST}" ]]; then
+          echo "Failed to resolve digest for ${_IMAGE_URI}" >&2
+          exit 1
+        fi
+
+        IMAGE_WITH_DIGEST="${_IMAGE_REPO}@${DIGEST}"
+        printf '%s' "${IMAGE_WITH_DIGEST}" > /workspace/image_to_deploy.txt
+        echo "Resolved deploy image: ${IMAGE_WITH_DIGEST}"
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: deploy-cloud-run
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        IMAGE_TO_DEPLOY="$(cat /workspace/image_to_deploy.txt)"
+        gcloud run deploy ${_SERVICE} --image=${IMAGE_TO_DEPLOY} --region=${_REGION} --project=${_PROJECT_ID} --platform=managed --allow-unauthenticated --quiet
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: verify-deployed-image
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        DEPLOYED_IMAGE="$(gcloud run services describe "${_SERVICE}" --region="${_REGION}" --project="${_PROJECT_ID}" --format='value(spec.template.spec.containers[0].image)')"
+
+        if [[ -z "${DEPLOYED_IMAGE}" ]]; then
+          echo "Unable to fetch deployed image for service ${_SERVICE}." >&2
+          exit 1
+        fi
+
+        if [[ "${DEPLOYED_IMAGE}" == gcr.io/cloudrun/placeholder* ]]; then
+          echo "Deployment verification failed: service still points to placeholder image (${DEPLOYED_IMAGE})." >&2
+          exit 1
+        fi
+
+        if [[ "${DEPLOYED_IMAGE}" != ${_IMAGE_REPO}@sha256:* ]]; then
+          echo "Deployment verification failed: unexpected deployed image (${DEPLOYED_IMAGE})." >&2
+          exit 1
+        fi
+
+        echo "Deployment verification passed: ${DEPLOYED_IMAGE}"
+
 substitutions:
-  _IMAGE_URI: us-central1-docker.pkg.dev/PROJECT/REPO/quote-tool:latest
-  _SERVICE: quote-tool
+  _PROJECT_ID: quote-tool-483716
+  _SERVICE: expenses
   _REGION: us-central1
+  _IMAGE_REPO: us-central1-docker.pkg.dev/quote-tool-483716/cloud-run-source-deploy/expenses/expenses
+  _IMAGE_URI: us-central1-docker.pkg.dev/quote-tool-483716/cloud-run-source-deploy/expenses/expenses:${SHORT_SHA}
+
 options:
   logging: CLOUD_LOGGING_ONLY
