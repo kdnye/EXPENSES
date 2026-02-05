@@ -39,7 +39,7 @@ from wtforms import (
 )
 from wtforms.validators import DataRequired, Optional
 
-from scripts.import_air_rates import save_unique
+from .scripts.import_air_rates import save_unique
 from .models import (
     AppSetting,
     CostZone,
