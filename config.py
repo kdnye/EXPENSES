@@ -322,11 +322,11 @@ def _select_postgres_database_uri(
         "PostgreSQL database configuration is required. Set DATABASE_URL or "
         "POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, and POSTGRES_HOST."
     )
-    return "postgresql+psycopg2://localhost/postgres"
+    return "postgresql+pg8000://localhost/postgres"
 
 
 def build_postgres_database_uri_from_env(
-    *, driver: str = "postgresql+psycopg2"
+    *, driver: str = "postgresql+pg8000"
 ) -> Optional[str]:
     """Assemble a PostgreSQL SQLAlchemy URI based on Compose-style environment variables.
 
@@ -381,7 +381,7 @@ def build_postgres_database_uri_from_env(
 
 
 def build_cloud_sql_unix_socket_uri_from_env(
-    *, driver: str = "postgresql+psycopg2"
+    *, driver: str = "postgresql+pg8000"
 ) -> Optional[str]:
     """Assemble a PostgreSQL SQLAlchemy URI for a Cloud SQL Unix socket.
 
@@ -396,7 +396,7 @@ def build_cloud_sql_unix_socket_uri_from_env(
 
     Args:
         driver: SQLAlchemy driver prefix used when constructing the URI. The
-            default matches the ``psycopg2`` driver required by
+            default matches the ``pg8000`` driver required by
             :mod:`sqlalchemy` for PostgreSQL connections.
 
     Returns:
@@ -427,7 +427,7 @@ def build_cloud_sql_unix_socket_uri_from_env(
     if options:
         query_pairs.extend(_parse_postgres_options(options))
 
-    query_pairs.append(("host", f"/cloudsql/{connection_name}"))
+    query_pairs.append(("unix_sock", f"/cloudsql/{connection_name}/.s.PGSQL.5432"))
     query = urlencode(query_pairs, safe="/")
     return (
         f"{driver}://{quote_plus(user)}:{quote_plus(password).replace('%', '%%')}@/"
