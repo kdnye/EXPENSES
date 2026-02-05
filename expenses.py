@@ -11,6 +11,7 @@ from flask import (
     Blueprint,
     Response,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -32,11 +33,68 @@ from app.services.expense_workflow import (
 expenses_bp = Blueprint("expenses", __name__, template_folder="templates")
 
 
+def _gl_account_code_set() -> set[str]:
+    """Return the set of valid GL account codes from the workbook source.
+
+    Returns:
+        A set containing each unique GL account code available in the
+        ``GL Accounts`` worksheet.
+
+    External dependencies:
+        * Calls :func:`app.services.expense_workflow.load_gl_accounts` to load
+          account metadata from the shared expense reference workbook.
+    """
+
+    return {option.account for option in load_gl_accounts() if option.account}
+
+
+@expenses_bp.get("/gl-accounts")
+@login_required
+@employee_required(approved_only=True)
+def gl_accounts_options() -> Response:
+    """Return GL account options for frontend validation and line item inputs.
+
+    Returns:
+        JSON payload containing ``account`` and ``label`` values for each GL
+        account defined by :func:`app.services.expense_workflow.load_gl_accounts`.
+
+    External dependencies:
+        * Calls :func:`app.services.expense_workflow.load_gl_accounts`.
+        * Uses :func:`flask.jsonify` to serialize response data.
+    """
+
+    options = [
+        {"account": option.account, "label": option.label}
+        for option in load_gl_accounts()
+        if option.account
+    ]
+    return jsonify({"accounts": options})
+
+
 @expenses_bp.route("/new", methods=["GET", "POST"])
 @login_required
 @employee_required(approved_only=True)
 def new_expense() -> str | Response:
-    """Render and process new expense report entry using dynamic line items."""
+    """Render and process new expense report entry using dynamic line items.
+
+    Inputs:
+        * ``GET`` request renders the blank report form.
+        * ``POST`` request reads ``request.form`` fields for report metadata and
+          dynamic line items along with optional ``request.files`` receipts.
+
+    Outputs:
+        * Rendered HTML for the report form on ``GET``.
+        * Redirect response to either the form (validation failures) or the
+          current user's report list after save.
+
+    External dependencies:
+        * Calls :func:`app.services.expense_workflow.load_gl_accounts` and
+          :func:`app.services.expense_workflow.load_expense_types` for form
+          choices.
+        * Calls :func:`app.services.expense_workflow.upload_receipt_to_cloud_storage`
+          for receipt uploads.
+        * Writes report and line rows through :mod:`app.models.db`.
+    """
 
     supervisors = (
         User.query.filter(
@@ -45,8 +103,8 @@ def new_expense() -> str | Response:
         .order_by(User.first_name.asc(), User.last_name.asc())
         .all()
     )
-    gl_accounts = load_gl_accounts()
     expense_types = load_expense_types()
+    valid_gl_accounts = _gl_account_code_set()
 
     if request.method == "POST":
         supervisor_id_raw = (request.form.get("supervisor_id") or "").strip()
@@ -123,11 +181,20 @@ def new_expense() -> str | Response:
                 line_index=index,
             )
 
+            gl_account = (gls[index] if index < len(gls) else "").strip()
+            if gl_account not in valid_gl_accounts:
+                db.session.rollback()
+                flash(
+                    f"Line {index + 1}: select a GL account from the approved list.",
+                    "warning",
+                )
+                return redirect(url_for("expenses.new_expense"))
+
             line = ExpenseLine(
                 expense_report_id=report.id,
                 date=line_date,
                 expense_type=(types[index] if index < len(types) else "").strip(),
-                gl_account=(gls[index] if index < len(gls) else "").strip(),
+                gl_account=gl_account,
                 vendor=(vendors[index] if index < len(vendors) else "").strip(),
                 description=(
                     descriptions[index] if index < len(descriptions) else ""
@@ -144,7 +211,6 @@ def new_expense() -> str | Response:
     return render_template(
         "expenses/new_expense.html",
         supervisors=supervisors,
-        gl_accounts=gl_accounts,
         expense_types=expense_types,
         reference_workbook="Dave Alexander Expense Report 12.12.2023.xlsx",
     )
