@@ -25,18 +25,18 @@ from flask.typing import ResponseReturnValue
 from flask_session import Session as FlaskSession
 import redis as redispy
 
-from app.quote.distance import get_distance_miles
-from app.quote.theme import init_fsi_theme
+from .quote.distance import get_distance_miles
+from .quote.theme import init_fsi_theme
 from .models import db, User, Quote, HotshotRate
-from app.services.mail import (
+from .services.mail import (
     MailRateLimitError,
     enforce_mail_rate_limit,
     send_email,
     validate_sender_domain,
     user_has_mail_privileges,
 )
-from app.services.settings import reload_overrides
-from app.services.oidc_client import init_oidc_oauth
+from .services.settings import reload_overrides
+from .services.oidc_client import init_oidc_oauth
 
 login_manager = LoginManager()
 login_manager.login_view = "auth.login"
@@ -388,7 +388,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     init_oidc_oauth(app)
 
     # Ensure database tables exist before handling requests.
-    from app.database import (
+    from .database import (
         ensure_database_schema,
     )  # Local import avoids circular imports.
 
@@ -531,13 +531,14 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         return None
 
     # Blueprints
-    from app.api import api_bp
+    from .api import api_bp
     from .auth import auth_bp
     from .admin import admin_bp
     from .help import help_bp
-    from app.setup import setup_bp
+    from .expenses import expenses_bp
+    from .setup import setup_bp
     from .quotes import quotes_bp
-    from app.quote.admin_view import admin_quotes_bp
+    from .quote.admin_view import admin_quotes_bp
 
     csrf.exempt(api_bp)
     app.register_blueprint(api_bp, url_prefix="/api")
@@ -545,6 +546,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(admin_quotes_bp, url_prefix="/admin")
     app.register_blueprint(quotes_bp, url_prefix="/quotes")
+    app.register_blueprint(expenses_bp, url_prefix="/expenses")
     app.register_blueprint(help_bp, url_prefix="/help")
     app.register_blueprint(setup_bp)
 

@@ -62,3 +62,36 @@ def resolve_port(env_var: str = "PORT", default_port: int = DEFAULT_PORT) -> int
         return port
 
     return default_port
+
+
+def resolve_secret_value(env_var: str, secret_name_var: str) -> str:
+    """Return a secret from env var or Google Secret Manager.
+
+    Inputs:
+        env_var: Environment variable containing a plain text fallback value.
+        secret_name_var: Environment variable containing a Secret Manager
+            resource name such as
+            ``projects/PROJECT_ID/secrets/NAME/versions/latest``.
+
+    Outputs:
+        Secret value as a UTF-8 string. Returns an empty string when neither
+        source is configured.
+
+    External dependencies:
+        Calls ``google.cloud.secretmanager.SecretManagerServiceClient`` when a
+        secret resource name is provided.
+    """
+
+    direct_value = os.getenv(env_var, "").strip()
+    if direct_value:
+        return direct_value
+
+    secret_resource = os.getenv(secret_name_var, "").strip()
+    if not secret_resource:
+        return ""
+
+    from google.cloud import secretmanager
+
+    client = secretmanager.SecretManagerServiceClient()
+    response = client.access_secret_version(request={"name": secret_resource})
+    return response.payload.data.decode("utf-8").strip()

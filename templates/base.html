@@ -54,6 +54,12 @@
             <li class="nav-item">
               <a class="nav-link" href="{{ url_for('admin_quotes.quotes_html') }}">Quotes</a>
             </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('expenses.new_expense') }}">New Expense</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('expenses.supervisor_dashboard') }}">Pending Review</a>
+            </li>
             {% endif %}
             <li class="nav-item dropdown">
               <a
