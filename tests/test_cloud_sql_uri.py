@@ -1,6 +1,6 @@
 """Tests for Cloud SQL URI assembly and scripts package imports."""
 
-from scripts.import_air_rates import save_unique
+from app.scripts.import_air_rates import save_unique
 
 from config import build_cloud_sql_unix_socket_uri_from_env
 
@@ -30,7 +30,7 @@ def test_cloud_sql_uri_uses_sqlalchemy_cloud_sql_socket_format(monkeypatch):
     assert uri.startswith("postgresql+")
     assert "abc%26123" in uri
     assert (
-        "unix_sock=/cloudsql/project-1%3Aus-central1%3Aexpenses-db/.s.PGSQL.5432"
+        "host=/cloudsql/project-1:us-central1:expenses-db"
         in uri
     )
 

@@ -69,7 +69,7 @@ def upgrade() -> None:
                 f"CREATE TABLE {archive_table} AS TABLE {table_name} WITH DATA"  # nosec B608
             )
         )
-        op.drop_table(table_name)
+        op.execute(f"DROP TABLE {table_name} CASCADE")
 
 
 def downgrade() -> None:
@@ -82,7 +82,7 @@ def downgrade() -> None:
         if not _table_exists(connection, archive_table):
             continue
         if _table_exists(connection, table_name):
-            op.drop_table(table_name)
+            op.execute(f"DROP TABLE {table_name} CASCADE")
         op.execute(
             sa.text(
                 f"CREATE TABLE {table_name} AS TABLE {archive_table} WITH DATA"  # nosec B608

@@ -265,13 +265,24 @@ def _rebuild_database_url(raw_url: str | None) -> str | None:
     if not raw_url:
         return None
 
-    try:
-        url = make_url(raw_url)
-        if url.password:
-            url = url.set(password=quote_plus(url.password))
-        return str(url)
-    except Exception:
+    if "@" not in raw_url:
         return raw_url
+
+    creds_part, host_part = raw_url.rsplit("@", 1)
+    scheme_separator = "://"
+
+    if scheme_separator not in creds_part:
+        return raw_url
+
+    scheme, user_pass = creds_part.split(scheme_separator, 1)
+
+    if ":" not in user_pass:
+        return raw_url
+
+    user, password = user_pass.split(":", 1)
+    encoded_password = quote_plus(password)
+
+    return f"{scheme}{scheme_separator}{user}:{encoded_password}@{host_part}"
 
 
 def _is_postgres_dsn(database_uri: str) -> bool:
@@ -355,16 +366,18 @@ def build_postgres_database_uri_from_env(
         :func:`urllib.parse.quote_plus` and :func:`urllib.parse.urlencode` to
         safely encode credentials and query options for SQLAlchemy.
     """
+    database_url = os.getenv("expense_DATABASE_URL") or os.getenv("DATABASE_URL")
+    url_parts = urlparse(database_url) if database_url else None
 
-    password = os.getenv("POSTGRES_PASSWORD")
+    password = (os.getenv("expense_POSTGRES_PASSWORD") or os.getenv("POSTGRES_PASSWORD")) or (url_parts and url_parts.password)
     if not password:
         return None
 
-    user = os.getenv("POSTGRES_USER", "quote_tool")
-    db_name = os.getenv("POSTGRES_DB", "quote_tool")
-    host = os.getenv("POSTGRES_HOST", "postgres")
-    port = os.getenv("POSTGRES_PORT", "5432")
-    options = os.getenv("POSTGRES_OPTIONS", "")
+    user = (os.getenv("expense_POSTGRES_USER") or os.getenv("POSTGRES_USER")) or (url_parts and url_parts.username) or "quote_tool"
+    db_name = (os.getenv("expense_POSTGRES_DB") or os.getenv("POSTGRES_DB")) or (url_parts and url_parts.path and url_parts.path[1:]) or "quote_tool"
+    host = (os.getenv("expense_POSTGRES_HOST") or os.getenv("POSTGRES_HOST")) or (url_parts and url_parts.hostname) or "postgres"
+    port = (os.getenv("expense_POSTGRES_PORT") or os.getenv("POSTGRES_PORT")) or (url_parts and url_parts.port) or "5432"
+    options = (os.getenv("expense_POSTGRES_OPTIONS") or os.getenv("POSTGRES_OPTIONS", ""))
     query_pairs: Iterable[Tuple[str, str]] = []
 
     if not _is_hostname_resolvable(host):
@@ -413,17 +426,20 @@ def build_cloud_sql_unix_socket_uri_from_env(
         readable for SQLAlchemy.
     """
 
-    connection_name = os.getenv("CLOUD_SQL_CONNECTION_NAME", "").strip()
+    connection_name = (os.getenv("expense_CLOUD_SQL_CONNECTION_NAME") or os.getenv("CLOUD_SQL_CONNECTION_NAME", "")).strip()
     if not connection_name:
         return None
 
-    password = os.getenv("POSTGRES_PASSWORD")
+    database_url = os.getenv("expense_DATABASE_URL") or os.getenv("DATABASE_URL")
+    url_parts = urlparse(database_url) if database_url else None
+
+    password = (os.getenv("expense_POSTGRES_PASSWORD") or os.getenv("POSTGRES_PASSWORD")) or (url_parts and url_parts.password)
     if not password:
         return None
 
-    user = os.getenv("POSTGRES_USER", "quote_tool")
-    db_name = os.getenv("POSTGRES_DB", "quote_tool")
-    options = os.getenv("POSTGRES_OPTIONS", "")
+    user = (os.getenv("expense_POSTGRES_USER") or os.getenv("POSTGRES_USER")) or (url_parts and url_parts.username) or "quote_tool"
+    db_name = (os.getenv("expense_POSTGRES_DB") or os.getenv("POSTGRES_DB")) or (url_parts and url_parts.path and url_parts.path[1:]) or "quote_tool"
+    options = (os.getenv("expense_POSTGRES_OPTIONS") or os.getenv("POSTGRES_OPTIONS", ""))
     query_pairs: List[Tuple[str, str]] = []
 
     if options:
@@ -583,7 +599,7 @@ def _resolve_oidc_allowed_domain() -> str:
 
 class Config:
     SECRET_KEY = _resolve_secret_key()
-    _raw_database_url = os.getenv("DATABASE_URL")
+    _raw_database_url = os.getenv("expense_DATABASE_URL") or os.getenv("DATABASE_URL")
     _sanitized_database_url = _sanitize_database_url(
         _rebuild_database_url(_raw_database_url)
     )
@@ -592,11 +608,17 @@ class Config:
     _compose_env_present = any(
         os.getenv(var)
         for var in (
+            "expense_POSTGRES_PASSWORD",
             "POSTGRES_PASSWORD",
+            "expense_POSTGRES_USER",
             "POSTGRES_USER",
+            "expense_POSTGRES_DB",
             "POSTGRES_DB",
+            "expense_POSTGRES_HOST",
             "POSTGRES_HOST",
+            "expense_POSTGRES_PORT",
             "POSTGRES_PORT",
+            "expense_POSTGRES_OPTIONS",
             "POSTGRES_OPTIONS",
         )
     )
@@ -618,13 +640,13 @@ class Config:
             "POSTGRES_PASSWORD, and POSTGRES_DB."
         )
     DATABASE_URL = _sanitized_database_url or ""
-    POSTGRES_USER = os.getenv("POSTGRES_USER", "").strip()
-    POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "").strip()
-    POSTGRES_DB = os.getenv("POSTGRES_DB", "").strip()
-    POSTGRES_HOST = os.getenv("POSTGRES_HOST", "").strip()
-    POSTGRES_PORT = os.getenv("POSTGRES_PORT", "").strip()
-    POSTGRES_OPTIONS = os.getenv("POSTGRES_OPTIONS", "").strip()
-    CLOUD_SQL_CONNECTION_NAME = os.getenv("CLOUD_SQL_CONNECTION_NAME", "").strip()
+    POSTGRES_USER = (os.getenv("expense_POSTGRES_USER") or os.getenv("POSTGRES_USER", "")).strip()
+    POSTGRES_PASSWORD = (os.getenv("expense_POSTGRES_PASSWORD") or os.getenv("POSTGRES_PASSWORD", "")).strip()
+    POSTGRES_DB = (os.getenv("expense_POSTGRES_DB") or os.getenv("POSTGRES_DB", "")).strip()
+    POSTGRES_HOST = (os.getenv("expense_POSTGRES_HOST") or os.getenv("POSTGRES_HOST", "")).strip()
+    POSTGRES_PORT = (os.getenv("expense_POSTGRES_PORT") or os.getenv("POSTGRES_PORT", "")).strip()
+    POSTGRES_OPTIONS = (os.getenv("expense_POSTGRES_OPTIONS") or os.getenv("POSTGRES_OPTIONS", "")).strip()
+    CLOUD_SQL_CONNECTION_NAME = (os.getenv("expense_CLOUD_SQL_CONNECTION_NAME") or os.getenv("CLOUD_SQL_CONNECTION_NAME", "")).strip()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SETUP_MODE = os.getenv("SETUP_MODE", "false").lower() in {
         "true",

@@ -22,6 +22,38 @@ def _reload_config_module():
     return importlib.reload(config_module)
 
 
+
+def test_database_url_with_special_chars_is_encoded(monkeypatch):
+    """Ensure DATABASE_URL passwords with special characters are URL-encoded.
+
+    Inputs:
+        monkeypatch: pytest fixture used to set environment variables.
+
+    Outputs:
+        None. Asserts the SQLALCHEMY_DATABASE_URI contains the correctly
+        URL-encoded password.
+
+    External dependencies:
+        Reloads ``config`` via helper ``_reload_config_module``.
+    """
+
+    test_password = "p@ssw0rd&w!th$pec!alCh@rs"
+    expected_encoded_password = "p%40ssw0rd%26w%21th%24pec%21alCh%40rs"
+    
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        f"postgresql+psycopg2://testuser:{test_password}@localhost:5432/testdb",
+    )
+
+    config = _reload_config_module()
+
+    assert expected_encoded_password in config.Config.SQLALCHEMY_DATABASE_URI
+    assert (
+        f"postgresql+psycopg2://testuser:{expected_encoded_password}@localhost:5432/testdb"
+        == config.Config.SQLALCHEMY_DATABASE_URI
+    )
+
+
 def test_oidc_values_can_be_read_from_direct_secret_env(monkeypatch):
     """Ensure OIDC values map from env vars used for Secret Manager injection.
 
@@ -68,3 +100,4 @@ def test_netsuite_key_material_can_be_read_from_secret_env(monkeypatch):
 
     assert config.Config.NETSUITE_SFTP_PRIVATE_KEY == "private-key-bytes"
     assert config.Config.NETSUITE_SFTP_PRIVATE_KEY_PASSPHRASE == "key-passphrase"
+
