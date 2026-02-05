@@ -147,15 +147,23 @@ name to the environment variable expected by the app (for example, the
 `POSTGRES_PASSWORD` secret is injected as `POSTGRES_PASSWORD` in the container):
 
 ```bash
-gcloud run deploy quote-tool \\
-  --image=LOCATION-docker.pkg.dev/PROJECT/REPO/quote-tool:TAG \\
-  --region=REGION \\
-  --platform=managed \\
-  --allow-unauthenticated \\
-  --set-env-vars=FLASK_DEBUG=false \\
-  --set-secrets=SECRET_KEY=projects/PROJECT/secrets/SECRET_KEY:latest,\\
-POSTGRES_PASSWORD=projects/PROJECT/secrets/POSTGRES_PASSWORD:latest,\\
-MAIL_PASSWORD=projects/PROJECT/secrets/MAIL_PASSWORD:latest,\\
+gcloud run deploy quote-tool \
+  --image=LOCATION-docker.pkg.dev/PROJECT/REPO/quote-tool:TAG \
+  --region=REGION \
+  --platform=managed \
+  --allow-unauthenticated \
+  --add-cloudsql-instances=PROJECT:REGION:INSTANCE \
+  --set-env-vars=ENVIRONMENT=production,FLASK_DEBUG=false,STARTUP_DB_CHECKS=true,HEALTHCHECK_REQUIRE_DB=true,CLOUD_SQL_CONNECTION_NAME=PROJECT:REGION:INSTANCE \
+  --set-secrets=DATABASE_URL=projects/PROJECT/secrets/DATABASE_URL:latest,\
+SECRET_KEY=projects/PROJECT/secrets/SECRET_KEY:latest,\
+OIDC_CLIENT_ID=projects/PROJECT/secrets/OIDC_CLIENT_ID:latest,\
+OIDC_CLIENT_SECRET=projects/PROJECT/secrets/OIDC_CLIENT_SECRET:latest,\
+OIDC_ISSUER=projects/PROJECT/secrets/OIDC_ISSUER:latest,\
+OIDC_AUDIENCE=projects/PROJECT/secrets/OIDC_AUDIENCE:latest,\
+NETSUITE_SFTP_PASSWORD=projects/PROJECT/secrets/NETSUITE_SFTP_PASSWORD:latest,\
+NETSUITE_SFTP_PRIVATE_KEY=projects/PROJECT/secrets/NETSUITE_SFTP_PRIVATE_KEY:latest,\
+NETSUITE_SFTP_PRIVATE_KEY_PASSPHRASE=projects/PROJECT/secrets/NETSUITE_SFTP_PRIVATE_KEY_PASSPHRASE:latest,\
+MAIL_PASSWORD=projects/PROJECT/secrets/MAIL_PASSWORD:latest,\
 GOOGLE_MAPS_API_KEY=projects/PROJECT/secrets/GOOGLE_MAPS_API_KEY:latest
 ```
 
@@ -175,29 +183,29 @@ required to read secrets and reach dependencies:
 - `roles/cloudsql.client` if the service connects to Cloud SQL.
 
 ### Variable reference
-
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `SECRET_KEY` | Yes | Secures Flask sessions and CSRF tokens. Required in production when `ENVIRONMENT` or `FLASK_ENV` is set to `production`; otherwise the app starts in maintenance mode and reports a configuration error. Generate at least 32 random bytes (see `python -c 'import secrets; print(secrets.token_urlsafe(32))'`). |
+| `ENVIRONMENT` | Yes | Set to `production` for Cloud Run releases so production-only safeguards are enforced. |
 | `FLASK_DEBUG` | Yes | Set to `false` in production to disable Flask's interactive debugger and reloader. |
-| `GOOGLE_MAPS_API_KEY` | Yes | Authenticates calls to Google’s Distance Matrix API. |
+| `STARTUP_DB_CHECKS` | Recommended | Feature flag for startup validation checks. Keep `true` in production so missing tables/configuration fail fast during release. |
+| `HEALTHCHECK_REQUIRE_DB` | Recommended | Set to a truthy value so `/healthz` fails when database connectivity is broken. |
+| `CLOUD_SQL_CONNECTION_NAME` | Yes (Cloud Run + Cloud SQL) | Cloud SQL instance connection name (`project:region:instance`) and must match the Cloud Run `--add-cloudsql-instances` attachment. |
+| `DATABASE_URL` | Yes (Cloud Run) | Preferred database strategy. Inject from Secret Manager as a PostgreSQL DSN compatible with Cloud SQL host/socket settings. |
+| `SECRET_KEY` | Yes | Secures Flask sessions and CSRF tokens. Required in production when `ENVIRONMENT` or `FLASK_ENV` is `production`. |
+| `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER`, `OIDC_AUDIENCE` | Yes (when OIDC enabled) | OIDC identity-provider settings consumed by `config.py` and `services.oidc_client`; inject from Secret Manager in production. |
+| `NETSUITE_SFTP_PASSWORD`, `NETSUITE_SFTP_PRIVATE_KEY`, `NETSUITE_SFTP_PRIVATE_KEY_PASSPHRASE` | Yes (when NetSuite export enabled) | NetSuite SFTP authentication credentials and key material. Keep these in Secret Manager only. |
+| `GOOGLE_MAPS_API_KEY` | Yes | Authenticates calls to Google's Distance Matrix API. |
 | `TZ` | Yes | Time zone used for timestamp formatting and log rotation. |
-| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Yes | Credentials and database name consumed by Cloud SQL and the Flask app's default connection string when `DATABASE_URL` is not set. |
-| `POSTGRES_HOST` | No | Hostname or IP for Cloud SQL when using TCP connections. |
-| `CLOUD_SQL_CONNECTION_NAME` | No | Cloud SQL instance connection name used to build a Unix socket DSN on Cloud Run (for example `project:region:instance`). Requires the standard `POSTGRES_*` credentials. |
-| `DATABASE_URL` | No | Override the default connection string with a PostgreSQL DSN when using an external database. |
 | `DB_POOL_SIZE` | No | Overrides the SQLAlchemy connection pool size when using PostgreSQL or MySQL. |
 | `CACHE_TYPE` / `CACHE_REDIS_URL` | No | Configure Flask-Caching. Leave unset to disable caching or point to your managed Redis instance. |
-| `RATELIMIT_STORAGE_URI` | No | Storage backend for Flask-Limiter counters. Defaults to `memory://` unless you set it to a Redis instance. |
-| `MAIL_*` | No | Configure outbound email (SMTP host, credentials, TLS/SSL flags). Needed for password resets. Super admins can also supply these values through the **Admin → Mail Settings** page at runtime. |
+| `RATELIMIT_STORAGE_URI` | No | Storage backend for Flask-Limiter counters. Defaults to `memory://` unless set to Redis. |
+| `MAIL_*` | No | Configure outbound email (SMTP host, credentials, TLS/SSL flags). Needed for password resets. |
 | `MAIL_ALLOWED_SENDER_DOMAIN` | No | Restricts `MAIL_DEFAULT_SENDER` to an approved sender domain (defaults to `freightservices.net`). |
 | `MAIL_PRIVILEGED_DOMAIN` | No | Controls which user email domains can access advanced mail features. |
 | `MAIL_RATE_LIMIT_PER_*` | No | Tune per-user, per-feature, and per-recipient rate limits for outbound email traffic. |
 | `RATE_DATA_DIR` | No | Directory containing the rate CSV files consumed by `init_db.py`. Defaults to the repository root. |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | No | When set, `init_db.py` bootstraps an administrator account with these credentials. |
-| `HEALTHCHECK_REQUIRE_DB` | No | Set to a truthy value to require database connectivity for the `/healthz` probe endpoint. |
 | `HEALTHCHECK_DB_TIMEOUT_SECONDS` | No | Timeout (in seconds) for the optional database probe performed by `/healthz`. Defaults to `2.0`. |
-
 Never commit the `.env` file to version control. Restrict filesystem
 permissions (`chmod 600 .env`) so only the deployment user can read it.
 
@@ -232,21 +240,6 @@ deploys to Cloud Run in one pipeline):
 gcloud builds submit --config=cloudbuild.yaml \\
   --substitutions=_IMAGE_URI=LOCATION-docker.pkg.dev/PROJECT/REPO/quote-tool:TAG,_SERVICE=quote-tool,_REGION=REGION \\
   .
-```
-
-If you need a manual deploy (for example, to change the authentication
-settings), you can deploy the image to Cloud Run directly (set environment
-variables via `--set-env-vars` and secrets via `--set-secrets` or in the Cloud
-Console):
-
-```bash
-gcloud run deploy quote-tool \\
-  --image=LOCATION-docker.pkg.dev/PROJECT/REPO/quote-tool:TAG \\
-  --region=REGION \\
-  --platform=managed \\
-  --allow-unauthenticated \\
-  --set-env-vars=FLASK_DEBUG=false,GOOGLE_MAPS_API_KEY=YOUR_KEY \\
-  --set-secrets=SECRET_KEY=projects/PROJECT/secrets/SECRET_KEY:latest
 ```
 
 For an interactive workflow, `scripts/deploy.sh` prompts for the required
@@ -381,6 +374,16 @@ If `RATE_DATA_DIR` is defined, the script reads CSV files from that directory.
 Otherwise it falls back to the CSVs checked into the repository root. Provide
 `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env` (or export them temporarily) to
 bootstrap the first admin account.
+
+### Pre-release startup validation checklist
+
+Before promoting a release, run this checklist so deployments fail early when
+required env vars or secret bindings are missing:
+
+1. Confirm non-secret production flags on the Cloud Run service: `ENVIRONMENT=production`, `FLASK_DEBUG=false`, `STARTUP_DB_CHECKS=true`, and `HEALTHCHECK_REQUIRE_DB=true`.
+2. Confirm `CLOUD_SQL_CONNECTION_NAME` on Cloud Run exactly matches the target instance (`PROJECT:REGION:INSTANCE`) and is also attached through `--add-cloudsql-instances`.
+3. Confirm Secret Manager bindings exist for `DATABASE_URL`, `SECRET_KEY`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER`, `OIDC_AUDIENCE`, `NETSUITE_SFTP_PASSWORD`, `NETSUITE_SFTP_PRIVATE_KEY`, and `NETSUITE_SFTP_PRIVATE_KEY_PASSPHRASE`.
+4. Deploy and verify the new revision reaches `Ready=True`; if startup checks fail, inspect revision logs for missing env/secret errors and fix bindings before retrying.
 
 ## 6. Maintenance
 
