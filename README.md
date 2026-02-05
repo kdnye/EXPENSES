@@ -49,6 +49,13 @@ and administrators manage policy, users, and system settings.
    ```
 6. Open the app in your browser and navigate to the expense reporting pages
 
+
+## Legacy quote data cleanup
+
+Legacy quote maintenance tables (accessorials, hotshot rates, beyond rates, air cost zones, ZIP zones, and rate upload logs) have been retired from the admin UI and ORM model layer.
+
+A migration script is provided at `migrations/versions/20260205_01_archive_and_drop_legacy_quote_tables.py` that archives each retired table into an `archive_<table>_<revision>` backup table before dropping the original table.
+
 ## Testing
 
 Run the full test suite before committing:
