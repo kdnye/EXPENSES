@@ -453,44 +453,9 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
                 500,
             )
 
-    def _is_allowed_setup_path(path: str) -> bool:
-        """Return True when ``path`` should bypass setup redirects.
 
-        Args:
-            path: Raw request path from :data:`flask.request.path`.
 
-        Returns:
-            ``True`` when setup enforcement should skip the path.
-        """
 
-        return (
-            path.startswith("/setup")
-            or path.startswith("/static")
-            or path == "/healthz"
-            or path == "/healthz/config"
-        )
-
-    @app.before_request
-    def _redirect_to_setup() -> Optional[ResponseReturnValue]:
-        """Redirect to setup when no users exist in the database.
-
-        Returns:
-            ``None`` when the request should continue as normal. When setup is
-            required, returns a redirect response to
-            :func:`setup.setup_status`.
-
-        External dependencies:
-            * Calls :func:`_is_setup_required`, which queries
-              :class:`app.models.User`.
-        """
-
-        if _is_allowed_setup_path(request.path):
-            return None
-        setup_required = _is_setup_required()
-        current_app.config["SETUP_REQUIRED"] = setup_required
-        if setup_required:
-            return redirect(url_for("setup.setup_status"))
-        return None
 
     # Blueprints
     from .api import api_bp
@@ -498,7 +463,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     from .admin import admin_bp
     from .help import help_bp
     from .expenses import expenses_bp
-    from .setup import setup_bp
+
 
     csrf.exempt(api_bp)
     app.register_blueprint(api_bp, url_prefix="/api")
@@ -506,7 +471,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(expenses_bp, url_prefix="/expenses")
     app.register_blueprint(help_bp, url_prefix="/help")
-    app.register_blueprint(setup_bp)
+
 
     @app.route("/", methods=["GET"])
     def index() -> str:
