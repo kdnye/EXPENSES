@@ -6,6 +6,8 @@ from pathlib import Path
 MODELS_PATH = Path("app/models.py")
 ADMIN_PATH = Path("app/admin.py")
 DASHBOARD_TEMPLATE_PATH = Path("templates/admin_dashboard.html")
+EMPLOYEE_DASHBOARD_TEMPLATE_PATH = Path("templates/admin_employee_dashboard.html")
+BASE_TEMPLATE_PATH = Path("templates/base.html")
 MIGRATION_PATH = Path(
     "migrations/versions/20260205_01_archive_and_drop_legacy_quote_tables.py"
 )
@@ -103,3 +105,27 @@ def test_migration_archives_before_drop() -> None:
     assert "archive_" in source
     assert "CREATE TABLE" in source
     assert "op.drop_table" in source
+
+
+def test_templates_remove_admin_quotes_endpoint_references() -> None:
+    """Assert templates no longer reference the removed admin quote endpoint.
+
+    Inputs:
+        None. Reads source code from dashboard/base templates.
+
+    Outputs:
+        None. Fails if ``admin_quotes.quotes_html`` references return.
+
+    External dependencies:
+        Uses :class:`pathlib.Path` to read repository files.
+    """
+
+    admin_dashboard_source = DASHBOARD_TEMPLATE_PATH.read_text(encoding="utf-8")
+    employee_dashboard_source = EMPLOYEE_DASHBOARD_TEMPLATE_PATH.read_text(
+        encoding="utf-8"
+    )
+    base_source = BASE_TEMPLATE_PATH.read_text(encoding="utf-8")
+
+    assert "admin_quotes.quotes_html" not in admin_dashboard_source
+    assert "admin_quotes.quotes_html" not in employee_dashboard_source
+    assert "Quotes" not in base_source

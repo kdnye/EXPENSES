@@ -42,6 +42,8 @@ def test_repository_contains_no_quote_new_quote_references() -> None:
         Path("templates/quote_result.html"),
     ]
 
-    for file_path in files_to_check:
+    existing_files = [path for path in files_to_check if path.exists()]
+
+    for file_path in existing_files:
         content = file_path.read_text(encoding="utf-8")
         assert "quotes.new_quote" not in content

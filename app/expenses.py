@@ -212,7 +212,7 @@ def new_expense() -> str | Response:
         "expenses/new_expense.html",
         supervisors=supervisors,
         expense_types=expense_types,
-        reference_workbook="Dave Alexander Expense Report 12.12.2023.xlsx",
+        reference_workbook="expense_report_template.xlsx",
     )
 
 
