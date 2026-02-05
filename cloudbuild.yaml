@@ -38,7 +38,16 @@ steps:
       - |
         set -euo pipefail
         IMAGE_TO_DEPLOY="$(cat /workspace/image_to_deploy.txt)"
-        gcloud run deploy ${_SERVICE} --image=${IMAGE_TO_DEPLOY} --region=${_REGION} --project=${_PROJECT_ID} --platform=managed --allow-unauthenticated --quiet
+        gcloud run deploy ${_SERVICE} \
+          --image=${IMAGE_TO_DEPLOY} \
+          --region=${_REGION} \
+          --project=${_PROJECT_ID} \
+          --platform=managed \
+          --allow-unauthenticated \
+          --add-cloudsql-instances=${_CLOUD_SQL_CONNECTION_NAME} \
+          --set-env-vars=ENVIRONMENT=production,FLASK_DEBUG=false,STARTUP_DB_CHECKS=true,HEALTHCHECK_REQUIRE_DB=true \
+          --set-secrets=SECRET_KEY=${_SECRET_KEY_SECRET},OIDC_CLIENT_ID=${_OIDC_CLIENT_ID_SECRET},OIDC_CLIENT_SECRET=${_OIDC_CLIENT_SECRET},OIDC_ISSUER=${_OIDC_ISSUER_SECRET},OIDC_AUDIENCE=${_OIDC_AUDIENCE_SECRET},NETSUITE_SFTP_PASSWORD=${_NETSUITE_SFTP_PASSWORD_SECRET},NETSUITE_SFTP_PRIVATE_KEY=${_NETSUITE_SFTP_PRIVATE_KEY_SECRET},NETSUITE_SFTP_PRIVATE_KEY_PASSPHRASE=${_NETSUITE_SFTP_PRIVATE_KEY_PASSPHRASE_SECRET},DATABASE_URL=${_DATABASE_URL_SECRET} \
+          --quiet
 
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     id: verify-deployed-image
@@ -72,6 +81,16 @@ substitutions:
   _REGION: us-central1
   _IMAGE_REPO: us-central1-docker.pkg.dev/quote-tool-483716/cloud-run-source-deploy/expenses/expenses
   _IMAGE_URI: us-central1-docker.pkg.dev/quote-tool-483716/cloud-run-source-deploy/expenses/expenses:${SHORT_SHA}
+  _CLOUD_SQL_CONNECTION_NAME: quote-tool-483716:us-central1:quotetool-postgres-instance
+  _DATABASE_URL_SECRET: DATABASE_URL:latest
+  _SECRET_KEY_SECRET: SECRET_KEY:latest
+  _OIDC_CLIENT_ID_SECRET: OIDC_CLIENT_ID:latest
+  _OIDC_CLIENT_SECRET: OIDC_CLIENT_SECRET:latest
+  _OIDC_ISSUER_SECRET: OIDC_ISSUER:latest
+  _OIDC_AUDIENCE_SECRET: OIDC_AUDIENCE:latest
+  _NETSUITE_SFTP_PASSWORD_SECRET: NETSUITE_SFTP_PASSWORD:latest
+  _NETSUITE_SFTP_PRIVATE_KEY_SECRET: NETSUITE_SFTP_PRIVATE_KEY:latest
+  _NETSUITE_SFTP_PRIVATE_KEY_PASSPHRASE_SECRET: NETSUITE_SFTP_PRIVATE_KEY_PASSPHRASE:latest
 
 options:
   logging: CLOUD_LOGGING_ONLY

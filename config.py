@@ -694,14 +694,23 @@ class Config:
     )
     API_AUTH_TOKEN = os.getenv("API_AUTH_TOKEN")
     API_QUOTE_RATE_LIMIT = os.getenv("API_QUOTE_RATE_LIMIT", "30 per minute")
-    OIDC_ISSUER = os.getenv("OIDC_ISSUER")
-    OIDC_CLIENT_ID = os.getenv("OIDC_CLIENT_ID")
+    OIDC_ISSUER = resolve_secret_value("OIDC_ISSUER", "OIDC_ISSUER_SECRET")
+    OIDC_CLIENT_ID = resolve_secret_value("OIDC_CLIENT_ID", "OIDC_CLIENT_ID_SECRET")
     OIDC_CLIENT_SECRET = resolve_secret_value(
         "OIDC_CLIENT_SECRET", "OIDC_CLIENT_SECRET_NAME"
     )
     OIDC_REDIRECT_URI = os.getenv("OIDC_REDIRECT_URI")
     OIDC_SCOPES = _resolve_oidc_scopes()
-    OIDC_AUDIENCE = _resolve_oidc_audience()
+    OIDC_AUDIENCE = (
+        tuple(
+            item.strip()
+            for item in resolve_secret_value(
+                "OIDC_AUDIENCE", "OIDC_AUDIENCE_SECRET"
+            ).split(",")
+            if item.strip()
+        )
+        or _resolve_oidc_audience()
+    )
     OIDC_ALLOWED_DOMAIN = _resolve_oidc_allowed_domain()
     OIDC_END_SESSION_ENDPOINT = os.getenv("OIDC_END_SESSION_ENDPOINT")
     EXPENSE_RECEIPT_BUCKET = os.getenv("EXPENSE_RECEIPT_BUCKET", "").strip()
@@ -710,6 +719,13 @@ class Config:
     NETSUITE_SFTP_USERNAME = os.getenv("NETSUITE_SFTP_USERNAME", "").strip()
     NETSUITE_SFTP_PASSWORD = resolve_secret_value(
         "NETSUITE_SFTP_PASSWORD", "NETSUITE_SFTP_PASSWORD_SECRET"
+    )
+    NETSUITE_SFTP_PRIVATE_KEY = resolve_secret_value(
+        "NETSUITE_SFTP_PRIVATE_KEY", "NETSUITE_SFTP_PRIVATE_KEY_SECRET"
+    )
+    NETSUITE_SFTP_PRIVATE_KEY_PASSPHRASE = resolve_secret_value(
+        "NETSUITE_SFTP_PRIVATE_KEY_PASSPHRASE",
+        "NETSUITE_SFTP_PRIVATE_KEY_PASSPHRASE_SECRET",
     )
     NETSUITE_SFTP_DIRECTORY = os.getenv("NETSUITE_SFTP_DIRECTORY", "/").strip()
 
