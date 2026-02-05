@@ -61,6 +61,19 @@ and administrators manage access and policy settings.
 - `/help/password-reset` - password reset walkthrough
 - `/help/register` - account setup guide
 
+## Runtime dependency: expense workbook template
+
+The expense submission routes depend on a runtime workbook file named
+`expense_report_template.xlsx`.
+
+- Expected location: repository/runtime root next to the `app/` package
+  (for this codebase, that resolves to `<deploy_root>/expense_report_template.xlsx`).
+- Required sheets: `GL Accounts` and `Data List`.
+
+If this file is missing, inaccessible, or malformed, `/expenses/new` and
+`/expenses/gl-accounts` will return controlled `503 Service Unavailable`
+responses so operators can correct deployment configuration.
+
 ## Onboarding checklist
 
 1. Register a new account from `/register`.

@@ -1,6 +1,7 @@
 """Integration tests for expense endpoints that depend on the workbook template."""
 
 from pathlib import Path
+from typing import Callable, Tuple
 
 import openpyxl
 
@@ -63,35 +64,22 @@ def _build_runtime_workbook(workbook_path: Path) -> None:
     workbook.close()
 
 
-def test_expense_endpoints_load_template_from_runtime_location(tmp_path) -> None:
-    """Verify workbook-dependent endpoints succeed for approved employees.
+def _seed_employee_and_supervisor(app) -> Tuple[int, int]:
+    """Create basic approved users required to hit protected expense routes.
 
     Inputs:
-        tmp_path: Pytest-provided temporary directory used as the simulated
-            runtime root.
+        app: Flask application instance with database bindings initialized.
 
     Outputs:
-        None. Asserts that ``/expenses/new`` and ``/expenses/gl-accounts`` both
-        return HTTP 200 when a workbook exists at the expected runtime path.
+        Tuple containing ``(employee_id, supervisor_id)`` for session setup.
 
     External dependencies:
-        * Calls :func:`app.create_app`.
-        * Uses :mod:`app.models.db` to create and seed users.
-        * Calls expense workflow helpers via route handlers in
-          :mod:`app.expenses`.
+        Writes rows through :mod:`app.models.db` and :class:`app.models.User`.
     """
-
-    runtime_root = tmp_path / "app"
-    workbook_path = runtime_root / "expense_report_template.xlsx"
-    _build_runtime_workbook(workbook_path)
-
-    app = create_app(TestConfig)
 
     with app.app_context():
         db.create_all()
 
-        # Remove maintenance-mode guard injected during app startup so this
-        # test can exercise endpoints after creating database tables.
         app.before_request_funcs[None] = [
             func
             for func in app.before_request_funcs.get(None, [])
@@ -116,46 +104,129 @@ def test_expense_endpoints_load_template_from_runtime_location(tmp_path) -> None
         )
         db.session.add_all([employee, supervisor])
         db.session.commit()
+        return employee.id, supervisor.id
 
-        expense_workflow._workbook_path.cache_clear()
+
+def _run_with_runtime_workbook_path(
+    workbook_path_factory: Callable[[], Path],
+    callback: Callable[[], None],
+) -> None:
+    """Temporarily force workbook loader helpers to use a test path.
+
+    Inputs:
+        workbook_path_factory: Zero-argument callable returning workbook path
+            used by :func:`app.services.expense_workflow._workbook_path`.
+        callback: Test action to execute while path override is active.
+
+    Outputs:
+        None. Executes ``callback`` and always restores original loader state.
+
+    External dependencies:
+        Mutates module-level cache and loader in
+        :mod:`app.services.expense_workflow`.
+    """
+
+    expense_workflow._workbook_path.cache_clear()
+    expense_workflow.load_gl_accounts.cache_clear()
+    expense_workflow.load_expense_types.cache_clear()
+
+    original_workbook_path_loader = expense_workflow._workbook_path
+    expense_workflow._workbook_path = workbook_path_factory
+
+    try:
+        callback()
+    finally:
+        expense_workflow._workbook_path = original_workbook_path_loader
         expense_workflow.load_gl_accounts.cache_clear()
         expense_workflow.load_expense_types.cache_clear()
 
-        original_workbook_path_loader = expense_workflow._workbook_path
 
-        def _runtime_workbook_path() -> Path:
-            """Return the temporary runtime workbook path for this test.
+def test_expense_endpoints_load_template_from_runtime_location(tmp_path) -> None:
+    """Verify workbook-dependent endpoints succeed for approved employees.
 
-            Inputs:
-                None.
+    Inputs:
+        tmp_path: Pytest-provided temporary directory used as the simulated
+            runtime root.
 
-            Outputs:
-                The path to the workbook created by
-                :func:`_build_runtime_workbook`.
+    Outputs:
+        None. Asserts that ``/expenses/new`` and ``/expenses/gl-accounts`` both
+        return HTTP 200 when a workbook exists at the expected runtime path.
 
-            External dependencies:
-                None.
-            """
+    External dependencies:
+        * Calls :func:`app.create_app`.
+        * Uses :mod:`app.models.db` to create and seed users.
+        * Calls expense workflow helpers via route handlers in
+          :mod:`app.expenses`.
+    """
 
-            return workbook_path
+    runtime_root = tmp_path / "app"
+    workbook_path = runtime_root / "expense_report_template.xlsx"
+    _build_runtime_workbook(workbook_path)
 
-        expense_workflow._workbook_path = _runtime_workbook_path
+    app = create_app(TestConfig)
+    employee_id, _supervisor_id = _seed_employee_and_supervisor(app)
 
-        try:
-            client = app.test_client()
-            with client.session_transaction() as session:
-                session["_user_id"] = str(employee.id)
-                session["_fresh"] = True
+    def _exercise_routes() -> None:
+        client = app.test_client()
+        with client.session_transaction() as session:
+            session["_user_id"] = str(employee_id)
+            session["_fresh"] = True
 
-            new_expense_response = client.get("/expenses/new")
-            gl_accounts_response = client.get("/expenses/gl-accounts")
+        new_expense_response = client.get("/expenses/new")
+        gl_accounts_response = client.get("/expenses/gl-accounts")
 
-            assert new_expense_response.status_code == 200
-            assert gl_accounts_response.status_code == 200
-            assert gl_accounts_response.json == {
-                "accounts": [{"account": "6100", "label": "6100 - Travel Expense"}]
-            }
-        finally:
-            expense_workflow._workbook_path = original_workbook_path_loader
-            expense_workflow.load_gl_accounts.cache_clear()
-            expense_workflow.load_expense_types.cache_clear()
+        assert new_expense_response.status_code == 200
+        assert gl_accounts_response.status_code == 200
+        assert gl_accounts_response.json == {
+            "accounts": [{"account": "6100", "label": "6100 - Travel Expense"}]
+        }
+
+    _run_with_runtime_workbook_path(lambda: workbook_path, _exercise_routes)
+
+
+def test_expense_routes_handle_missing_runtime_workbook(tmp_path) -> None:
+    """Ensure workbook errors become controlled endpoint responses.
+
+    Inputs:
+        tmp_path: Pytest-provided temporary directory where workbook does not
+            exist.
+
+    Outputs:
+        None. Asserts HTML and JSON expense endpoints return HTTP 503 with
+        user-facing error output when workbook runtime dependency is missing.
+
+    External dependencies:
+        * Calls :func:`app.create_app`.
+        * Uses :mod:`app.models.db` to create and seed users.
+        * Exercises route behavior in :mod:`app.expenses`.
+    """
+
+    missing_workbook_path = tmp_path / "missing" / "expense_report_template.xlsx"
+
+    app = create_app(TestConfig)
+    employee_id, _supervisor_id = _seed_employee_and_supervisor(app)
+
+    def _exercise_routes() -> None:
+        client = app.test_client()
+        with client.session_transaction() as session:
+            session["_user_id"] = str(employee_id)
+            session["_fresh"] = True
+
+        new_expense_response = client.get("/expenses/new")
+        gl_accounts_response = client.get("/expenses/gl-accounts")
+
+        assert new_expense_response.status_code == 503
+        assert b"Expense reference data is temporarily unavailable" in (
+            new_expense_response.data
+        )
+
+        assert gl_accounts_response.status_code == 503
+        assert "error" in gl_accounts_response.json
+        assert "Required sheets: GL Accounts, Data List" in (
+            gl_accounts_response.json["error"]
+        )
+
+    _run_with_runtime_workbook_path(
+        lambda: missing_workbook_path,
+        _exercise_routes,
+    )

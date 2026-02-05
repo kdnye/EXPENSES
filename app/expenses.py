@@ -23,6 +23,7 @@ from flask_login import current_user, login_required
 from .models import ExpenseLine, ExpenseReport, User, db
 from .policies import employee_required, super_admin_required
 from app.services.expense_workflow import (
+    ExpenseReferenceDataError,
     dispatch_csv_via_sftp,
     format_pending_reports_csv,
     load_expense_types,
@@ -63,11 +64,15 @@ def gl_accounts_options() -> Response:
         * Uses :func:`flask.jsonify` to serialize response data.
     """
 
-    options = [
-        {"account": option.account, "label": option.label}
-        for option in load_gl_accounts()
-        if option.account
-    ]
+    try:
+        options = [
+            {"account": option.account, "label": option.label}
+            for option in load_gl_accounts()
+            if option.account
+        ]
+    except ExpenseReferenceDataError as exc:
+        return jsonify({"error": str(exc)}), 503
+
     return jsonify({"accounts": options})
 
 
@@ -103,8 +108,16 @@ def new_expense() -> str | Response:
         .order_by(User.first_name.asc(), User.last_name.asc())
         .all()
     )
-    expense_types = load_expense_types()
-    valid_gl_accounts = _gl_account_code_set()
+    try:
+        expense_types = load_expense_types()
+        valid_gl_accounts = _gl_account_code_set()
+    except ExpenseReferenceDataError as exc:
+        flash(
+            "Expense reference data is temporarily unavailable. "
+            "Please contact support and try again shortly.",
+            "danger",
+        )
+        return render_template("500.html", error_message=str(exc)), 503
 
     if request.method == "POST":
         supervisor_id_raw = (request.form.get("supervisor_id") or "").strip()
