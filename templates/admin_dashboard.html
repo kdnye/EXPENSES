@@ -16,6 +16,40 @@
       </div>
     </div>
   </section>
+  <section class="dashboard-table mt-4" aria-label="Pending report reviews">
+    <h2 class="h4">Pending Report Reviews</h2>
+    <div class="table-responsive">
+      <table class="table table-striped align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Report</th>
+            <th>Employee</th>
+            <th>Report Month</th>
+            <th>Submitted</th>
+            <th>Review</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for report in pending_reports %}
+          <tr>
+            <td>#{{ report.id }}</td>
+            <td>{{ report.employee.first_name or report.employee.email }}</td>
+            <td>{{ report.report_month.strftime('%Y-%m') }}</td>
+            <td>{{ report.created_at.strftime('%Y-%m-%d') }}</td>
+            <td>
+              <a class="btn btn-sm btn-primary" href="{{ url_for('admin.review_report', report_id=report.id) }}">Review</a>
+            </td>
+          </tr>
+          {% endfor %}
+          {% if not pending_reports %}
+          <tr>
+            <td colspan="5" class="text-muted">No reports pending review.</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </section>
   <div class="dashboard-table">
     <div class="table-responsive">
       <table class="table table-striped align-middle mb-0">

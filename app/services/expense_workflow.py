@@ -175,6 +175,47 @@ def upload_receipt_to_cloud_storage(
     return blob.public_url
 
 
+def apply_report_review_action(
+    report: ExpenseReport,
+    *,
+    action: str,
+    comment: str,
+) -> Tuple[str, str]:
+    """Update a report based on a supervisor/admin review decision.
+
+    Inputs:
+        report: The :class:`app.models.ExpenseReport` instance being reviewed.
+        action: The normalized decision string, such as ``"approve"`` or
+            ``"reject"``.
+        comment: Free-form reviewer notes used when rejecting a report.
+
+    Outputs:
+        A two-item tuple containing the flash message and category that the
+        caller should present to the user interface.
+
+    External dependencies:
+        Modifies the ``report`` object provided by the caller. The caller must
+        commit the database session after invoking this helper.
+    """
+
+    normalized_action = action.strip().lower()
+    trimmed_comment = comment.strip()
+
+    if normalized_action == "approve":
+        report.status = "Pending Upload"
+        report.rejection_comment = None
+        return "Report approved and queued for NetSuite upload.", "success"
+
+    if normalized_action == "reject":
+        if not trimmed_comment:
+            raise ValueError("Rejection comment is required.")
+        report.status = "Draft"
+        report.rejection_comment = trimmed_comment
+        return "Report rejected and returned to employee draft status.", "info"
+
+    raise ValueError("Select a valid review action.")
+
+
 def format_pending_reports_csv(reports: Sequence[ExpenseReport]) -> str:
     """Serialize ``Pending Upload`` reports into a single NetSuite-ready CSV."""
 
