@@ -44,16 +44,18 @@
             <li class="nav-item">
               <a class="nav-link" href="{{ url_for('admin.dashboard') }}">Admin Dashboard</a>
             </li>
-            {% elif current_user.role == 'employee' and current_user.employee_approved %}
+            {% elif current_user.role in ['employee', 'supervisor'] and current_user.employee_approved %}
             <li class="nav-item">
               <a class="nav-link" href="{{ url_for('admin.dashboard') }}">Team Dashboard</a>
             </li>
             <li class="nav-item">
               <a class="nav-link" href="{{ url_for('expenses.new_expense') }}">New Expense</a>
             </li>
+            {% if current_user.role == 'supervisor' %}
             <li class="nav-item">
               <a class="nav-link" href="{{ url_for('expenses.supervisor_dashboard') }}">Pending Review</a>
             </li>
+            {% endif %}
             {% endif %}
             <li class="nav-item dropdown">
               <a

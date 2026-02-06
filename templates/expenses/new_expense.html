@@ -14,13 +14,14 @@
       <input type="month" name="report_month" class="form-control" required />
     </div>
     <div class="col-md-4">
-      <label class="form-label">Supervisor</label>
+      <label class="form-label">Supervisor (approved reviewers only)</label>
       <select class="form-select" name="supervisor_id" required>
         <option value="">Select supervisor</option>
         {% for supervisor in supervisors %}
         <option value="{{ supervisor.id }}">{{ supervisor.first_name or '' }} {{ supervisor.last_name or supervisor.email }}</option>
         {% endfor %}
       </select>
+      <div class="form-text">Only approved supervisors appear in this list.</div>
     </div>
     <div class="col-md-4">
       <label class="form-label">Notes</label>
