@@ -287,7 +287,8 @@ class ExpenseLine(db.Model):
     """Individual expense row attached to an :class:`ExpenseReport`.
 
     The columns mirror the spreadsheet-driven workflow used by employees for
-    monthly reimbursement submissions.
+    monthly reimbursement submissions. Supervisors review each line item during
+    report approval to capture granular approval and rejection feedback.
     """
 
     __tablename__ = EXPENSE_LINES_TABLE
@@ -306,4 +307,15 @@ class ExpenseLine(db.Model):
     amount = db.Column(db.Numeric(10, 2), nullable=False)
     description = db.Column(db.String(255))
     receipt_url = db.Column(db.String(1024))
+    review_status: Mapped[str] = db.Column(
+        Enum(
+            "Pending",
+            "Approved",
+            "Rejected",
+            name="expense_line_review_status",
+        ),
+        nullable=False,
+        default="Pending",
+    )
+    review_comment = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)

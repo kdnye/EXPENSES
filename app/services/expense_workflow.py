@@ -9,7 +9,7 @@ import uuid
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import List, Sequence, Tuple
+from typing import List, Mapping, Sequence, Tuple
 
 import openpyxl
 import paramiko
@@ -175,45 +175,66 @@ def upload_receipt_to_cloud_storage(
     return blob.public_url
 
 
-def apply_report_review_action(
+def apply_line_item_review_actions(
     report: ExpenseReport,
     *,
-    action: str,
-    comment: str,
+    decisions: Mapping[int, Tuple[str, str]],
 ) -> Tuple[str, str]:
-    """Update a report based on a supervisor/admin review decision.
+    """Update expense lines and report status based on line-level decisions.
 
     Inputs:
         report: The :class:`app.models.ExpenseReport` instance being reviewed.
-        action: The normalized decision string, such as ``"approve"`` or
-            ``"reject"``.
-        comment: Free-form reviewer notes used when rejecting a report.
+        decisions: Mapping of expense line identifiers to a tuple containing the
+            selected action (``"approve"`` or ``"reject"``) and reviewer notes.
 
     Outputs:
         A two-item tuple containing the flash message and category that the
         caller should present to the user interface.
 
     External dependencies:
-        Modifies the ``report`` object provided by the caller. The caller must
-        commit the database session after invoking this helper.
+        Mutates ``report`` and its ``lines`` in-place. The caller must commit
+        the database session after invoking this helper.
     """
 
-    normalized_action = action.strip().lower()
-    trimmed_comment = comment.strip()
+    if not report.lines:
+        raise ValueError("This report has no expense lines to review.")
 
-    if normalized_action == "approve":
-        report.status = "Pending Upload"
-        report.rejection_comment = None
-        return "Report approved and queued for NetSuite upload.", "success"
+    any_rejected = False
 
-    if normalized_action == "reject":
-        if not trimmed_comment:
-            raise ValueError("Rejection comment is required.")
+    for line in report.lines:
+        decision = decisions.get(line.id)
+        if not decision:
+            raise ValueError("Select approve or reject for every expense line.")
+
+        action, comment = decision
+        normalized_action = action.strip().lower()
+        trimmed_comment = comment.strip()
+
+        if normalized_action == "approve":
+            line.review_status = "Approved"
+            line.review_comment = None
+            continue
+
+        if normalized_action == "reject":
+            if not trimmed_comment:
+                raise ValueError(
+                    "Provide a rejection comment for each rejected expense line."
+                )
+            line.review_status = "Rejected"
+            line.review_comment = trimmed_comment
+            any_rejected = True
+            continue
+
+        raise ValueError("Select a valid review action for every expense line.")
+
+    if any_rejected:
         report.status = "Draft"
-        report.rejection_comment = trimmed_comment
-        return "Report rejected and returned to employee draft status.", "info"
+        report.rejection_comment = "Line-level feedback provided."
+        return "Report returned to draft with line-level feedback.", "info"
 
-    raise ValueError("Select a valid review action.")
+    report.status = "Pending Upload"
+    report.rejection_comment = None
+    return "All expense lines approved. Report queued for NetSuite upload.", "success"
 
 
 def format_pending_reports_csv(reports: Sequence[ExpenseReport]) -> str:
@@ -238,6 +259,8 @@ def format_pending_reports_csv(reports: Sequence[ExpenseReport]) -> str:
 
     for report in reports:
         for line in report.lines:
+            if getattr(line, "review_status", "Approved") != "Approved":
+                continue
             writer.writerow(
                 [
                     report.id,

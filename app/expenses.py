@@ -24,7 +24,7 @@ from .models import ExpenseLine, ExpenseReport, User, db
 from .policies import employee_required, super_admin_required, supervisor_required
 from app.services.expense_workflow import (
     ExpenseReferenceDataError,
-    apply_report_review_action,
+    apply_line_item_review_actions,
     dispatch_csv_via_sftp,
     format_pending_reports_csv,
     load_expense_types,
@@ -270,7 +270,7 @@ def supervisor_dashboard() -> str:
 @login_required
 @supervisor_required(approved_only=True)
 def review_report(report_id: int) -> str | Response:
-    """Allow supervisors to approve/reject pending reports with comments.
+    """Allow supervisors to approve or reject each expense line item.
 
     Inputs:
         report_id: Unique identifier of the :class:`app.models.ExpenseReport`
@@ -280,8 +280,8 @@ def review_report(report_id: int) -> str | Response:
         A rendered HTML page or redirect response after applying the decision.
 
     External dependencies:
-        * Calls :func:`app.services.expense_workflow.apply_report_review_action`
-          to update report state based on the submitted decision.
+        * Calls :func:`app.services.expense_workflow.apply_line_item_review_actions`
+          to update line statuses and report state based on the submitted review.
         * Uses :data:`flask_login.current_user` to enforce supervisor access.
     """
 
@@ -291,14 +291,17 @@ def review_report(report_id: int) -> str | Response:
         return redirect(url_for("expenses.supervisor_dashboard"))
 
     if request.method == "POST":
-        action = (request.form.get("action") or "").strip().lower()
-        comment = (request.form.get("comment") or "").strip()
+        decisions = {
+            line.id: (
+                request.form.get(f"line_{line.id}_action") or "",
+                request.form.get(f"line_{line.id}_comment") or "",
+            )
+            for line in report.lines
+        }
 
         try:
-            message, category = apply_report_review_action(
-                report,
-                action=action,
-                comment=comment,
+            message, category = apply_line_item_review_actions(
+                report, decisions=decisions
             )
         except ValueError as exc:
             flash(str(exc), "warning")

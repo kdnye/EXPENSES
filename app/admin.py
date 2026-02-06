@@ -49,7 +49,7 @@ from .models import (
 )
 from . import csrf
 from .policies import employee_required, super_admin_required
-from app.services.expense_workflow import apply_report_review_action
+from app.services.expense_workflow import apply_line_item_review_actions
 from app.services.rate_sets import (
     DEFAULT_RATE_SET,
     get_available_rate_sets,
@@ -468,8 +468,8 @@ def review_report(report_id: int) -> Union[str, Response]:
         applying the review decision on POST.
 
     External dependencies:
-        * Calls :func:`app.services.expense_workflow.apply_report_review_action`
-          to update the report status and rejection comments.
+        * Calls :func:`app.services.expense_workflow.apply_line_item_review_actions`
+          to update line statuses and report status.
         * Uses :class:`app.models.ExpenseReport` to load persisted report data.
         * Writes updates through :data:`app.models.db.session`.
     """
@@ -480,14 +480,17 @@ def review_report(report_id: int) -> Union[str, Response]:
         return redirect(url_for("admin.dashboard"))
 
     if request.method == "POST":
-        action = (request.form.get("action") or "").strip()
-        comment = (request.form.get("comment") or "").strip()
+        decisions = {
+            line.id: (
+                request.form.get(f"line_{line.id}_action") or "",
+                request.form.get(f"line_{line.id}_comment") or "",
+            )
+            for line in report.lines
+        }
 
         try:
-            message, category = apply_report_review_action(
-                report,
-                action=action,
-                comment=comment,
+            message, category = apply_line_item_review_actions(
+                report, decisions=decisions
             )
         except ValueError as exc:
             flash(str(exc), "warning")
