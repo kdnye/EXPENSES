@@ -48,11 +48,12 @@ class User(UserMixin, db.Model):
         company_phone: Contact phone number for the user's company.
         role: Application role flag used to enable privileged employee or
             administrative features. Acceptable values are ``"customer"``,
-            ``"employee"``, or ``"super_admin"`` and the field defaults to
-            ``"customer"``.
-        employee_approved: Boolean gating elevated employee-only features.
-            Set to ``True`` when the account has been vetted for internal tool
-            access.
+            ``"employee"``, ``"supervisor"``, or ``"super_admin"`` and the
+            field defaults to ``"customer"``. Supervisors are the approved
+            reviewers for expense reports.
+        employee_approved: Boolean gating elevated employee-only features,
+            including supervisor review access. Set to ``True`` when the
+            account has been vetted for internal tool access.
         admin_previous_role: Cached role restored when administrative access is
             revoked. Persisted only while :attr:`is_admin` is ``True``.
         admin_previous_employee_approved: Cached ``employee_approved`` value
@@ -74,13 +75,13 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     is_admin = db.Column(db.Boolean, default=False)
     role: Mapped[str] = db.Column(
-        Enum("customer", "employee", "super_admin", name="user_role"),
+        Enum("customer", "employee", "supervisor", "super_admin", name="user_role"),
         nullable=False,
         default="customer",
     )
     employee_approved: Mapped[bool] = db.Column(Boolean, nullable=False, default=False)
     admin_previous_role: Mapped[Optional[str]] = db.Column(
-        Enum("customer", "employee", name="user_admin_previous_role"),
+        Enum("customer", "employee", "supervisor", name="user_admin_previous_role"),
         nullable=True,
     )
     admin_previous_employee_approved: Mapped[Optional[bool]] = db.Column(

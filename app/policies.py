@@ -22,7 +22,7 @@ def _expand_roles(roles: Iterable[str]) -> Set[str]:
     expanded_roles: Set[str] = set()
     for role in roles:
         if role == "employee":
-            expanded_roles.update({"employee", "super_admin"})
+            expanded_roles.update({"employee", "supervisor", "super_admin"})
         elif role == "customer":
             expanded_roles.add("customer")
         elif role == "super_admin":
@@ -38,8 +38,8 @@ def roles_required(*roles: str, require_employee_approval: bool = False) -> Call
     Unauthenticated users are redirected to the login page. Authenticated users
     must expose a :attr:`app.models.User.role` value contained in ``roles``.
     When ``require_employee_approval`` is set the decorator also validates
-    :attr:`app.models.User.employee_approved` for employees. Super admins are
-    always allowed and bypass the approval check.
+    :attr:`app.models.User.employee_approved` for employees and supervisors.
+    Super admins are always allowed and bypass the approval check.
 
     Args:
         *roles: Acceptable values for :attr:`app.models.User.role`.
@@ -70,12 +70,9 @@ def roles_required(*roles: str, require_employee_approval: bool = False) -> Call
             if allowed_roles and user_role not in allowed_roles:
                 abort(403)
 
-            if (
-                require_employee_approval
-                and user_role == "employee"
-                and not getattr(current_user, "employee_approved", False)
-            ):
-                abort(403)
+            if require_employee_approval and user_role in {"employee", "supervisor"}:
+                if not getattr(current_user, "employee_approved", False):
+                    abort(403)
 
             return view(*args, **kwargs)
 
@@ -111,6 +108,24 @@ def employee_required(approved_only: bool = True) -> Callable:
     """
 
     return roles_required("employee", require_employee_approval=approved_only)
+
+
+def supervisor_required(approved_only: bool = True) -> Callable:
+    """Restrict access to supervisors and super admins.
+
+    Args:
+        approved_only: When ``True`` ensure
+            :data:`flask_login.current_user` has ``employee_approved`` set.
+
+    Returns:
+        Callable: Decorator enforcing supervisor-only access for the wrapped
+        view.
+
+    External dependencies:
+        * Calls :func:`roles_required` to validate roles and approvals.
+    """
+
+    return roles_required("supervisor", require_employee_approval=approved_only)
 
 
 def customer_required(view: Callable) -> Callable:

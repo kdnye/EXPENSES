@@ -21,7 +21,7 @@ from flask import (
 from flask_login import current_user, login_required
 
 from .models import ExpenseLine, ExpenseReport, User, db
-from .policies import employee_required, super_admin_required
+from .policies import employee_required, super_admin_required, supervisor_required
 from app.services.expense_workflow import (
     ExpenseReferenceDataError,
     dispatch_csv_via_sftp,
@@ -103,7 +103,9 @@ def new_expense() -> str | Response:
 
     supervisors = (
         User.query.filter(
-            User.id != current_user.id, User.role.in_(["employee", "super_admin"])
+            User.id != current_user.id,
+            User.role == "supervisor",
+            User.employee_approved.is_(True),
         )
         .order_by(User.first_name.asc(), User.last_name.asc())
         .all()
@@ -131,7 +133,11 @@ def new_expense() -> str | Response:
             flash("Select a valid supervisor.", "warning")
             return redirect(url_for("expenses.new_expense"))
 
-        supervisor = User.query.get(supervisor_id)
+        supervisor = User.query.filter(
+            User.id == supervisor_id,
+            User.role == "supervisor",
+            User.employee_approved.is_(True),
+        ).first()
         if not supervisor:
             flash("Selected supervisor was not found.", "warning")
             return redirect(url_for("expenses.new_expense"))
@@ -245,7 +251,7 @@ def my_reports() -> str:
 
 @expenses_bp.route("/supervisor")
 @login_required
-@employee_required(approved_only=True)
+@supervisor_required(approved_only=True)
 def supervisor_dashboard() -> str:
     """Show only reports awaiting review by the logged-in supervisor."""
 
@@ -261,7 +267,7 @@ def supervisor_dashboard() -> str:
 
 @expenses_bp.route("/supervisor/report/<int:report_id>", methods=["GET", "POST"])
 @login_required
-@employee_required(approved_only=True)
+@supervisor_required(approved_only=True)
 def review_report(report_id: int) -> str | Response:
     """Allow supervisors to approve/reject pending reports with comments."""
 
