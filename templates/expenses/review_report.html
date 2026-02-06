@@ -5,34 +5,78 @@
 <p><strong>Employee:</strong> {{ report.employee.first_name or report.employee.email }}</p>
 <p><strong>Status:</strong> {{ report.status }}</p>
 
-<div class="table-responsive mb-3">
-  <table class="table table-bordered">
-    <thead><tr><th>Date</th><th>Type</th><th>GL</th><th>Vendor</th><th>Description</th><th>Amount</th><th>Receipt</th></tr></thead>
-    <tbody>
-      {% for line in report.lines %}
-      <tr>
-        <td>{{ line.date.strftime('%Y-%m-%d') }}</td>
-        <td>{{ line.expense_type }}</td>
-        <td>{{ line.gl_account }}</td>
-        <td>{{ line.vendor }}</td>
-        <td>{{ line.description }}</td>
-        <td>${{ '%.2f'|format(line.amount) }}</td>
-        <td>{% if line.receipt_url %}<a href="{{ line.receipt_url }}" target="_blank" rel="noopener">View</a>{% else %}<span class="text-muted">None</span>{% endif %}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-
 <form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-  <div class="mb-3">
-    <label class="form-label">Rejection Comment (required for reject)</label>
-    <textarea class="form-control" name="comment" rows="3"></textarea>
+  <div class="table-responsive mb-3">
+    <table class="table table-bordered align-middle">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Type</th>
+          <th>GL</th>
+          <th>Vendor</th>
+          <th>Description</th>
+          <th>Amount</th>
+          <th>Receipt</th>
+          <th>Decision</th>
+          <th>Line Comment</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in report.lines %}
+        <tr>
+          <td>{{ line.date.strftime('%Y-%m-%d') }}</td>
+          <td>{{ line.expense_type }}</td>
+          <td>{{ line.gl_account }}</td>
+          <td>{{ line.vendor }}</td>
+          <td>{{ line.description }}</td>
+          <td>${{ '%.2f'|format(line.amount) }}</td>
+          <td>
+            {% if line.receipt_url %}
+            <a href="{{ line.receipt_url }}" target="_blank" rel="noopener">View</a>
+            {% else %}
+            <span class="text-muted">None</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="form-check">
+              <input
+                class="form-check-input"
+                type="radio"
+                name="line_status_{{ line.id }}"
+                id="line-{{ line.id }}-approve"
+                value="approve"
+                required
+              />
+              <label class="form-check-label" for="line-{{ line.id }}-approve">Approve</label>
+            </div>
+            <div class="form-check">
+              <input
+                class="form-check-input"
+                type="radio"
+                name="line_status_{{ line.id }}"
+                id="line-{{ line.id }}-reject"
+                value="reject"
+              />
+              <label class="form-check-label" for="line-{{ line.id }}-reject">Reject</label>
+            </div>
+          </td>
+          <td>
+            <textarea
+              class="form-control"
+              name="line_comment_{{ line.id }}"
+              rows="2"
+              placeholder="Required when rejecting."
+            ></textarea>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
+  <p class="text-muted small mb-3">Rejected lines require a comment.</p>
   <div class="d-flex gap-2">
-    <button class="btn btn-success" name="action" value="approve">Approve</button>
-    <button class="btn btn-danger" name="action" value="reject">Reject</button>
+    <button class="btn btn-primary" type="submit">Finalize Report</button>
   </div>
 </form>
 {% endblock %}

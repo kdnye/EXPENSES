@@ -44,6 +44,15 @@ class GLAccountOption:
     label: str
 
 
+@dataclass(frozen=True)
+class ExpenseLineDecision:
+    """Decision metadata collected for a single expense line review."""
+
+    line_id: int
+    status: str
+    comment: str
+
+
 @lru_cache(maxsize=1)
 def _workbook_path() -> Path:
     """Return the canonical workbook path used to mirror spreadsheet workflows."""
@@ -173,6 +182,99 @@ def upload_receipt_to_cloud_storage(
     )
     blob.make_public()
     return blob.public_url
+
+
+def parse_line_review_form_data(
+    report: ExpenseReport,
+    form_data: dict[str, str],
+) -> Tuple[ExpenseLineDecision, ...]:
+    """Collect line review decisions from a submitted form payload.
+
+    Inputs:
+        report: The :class:`app.models.ExpenseReport` with lines to review.
+        form_data: Raw form data keyed by ``line_status_<id>`` and
+            ``line_comment_<id>``.
+
+    Outputs:
+        A tuple of :class:`ExpenseLineDecision` values aligned to each report
+        line.
+
+    External dependencies:
+        Reads :attr:`app.models.ExpenseReport.lines` to build the result.
+    """
+
+    decisions: List[ExpenseLineDecision] = []
+    for line in report.lines:
+        status_key = f"line_status_{line.id}"
+        comment_key = f"line_comment_{line.id}"
+        decisions.append(
+            ExpenseLineDecision(
+                line_id=line.id,
+                status=(form_data.get(status_key) or "").strip(),
+                comment=(form_data.get(comment_key) or "").strip(),
+            )
+        )
+    return tuple(decisions)
+
+
+def apply_line_review_decisions(
+    report: ExpenseReport,
+    *,
+    decisions: Sequence[ExpenseLineDecision],
+) -> Tuple[str, str]:
+    """Apply line-level review decisions to a report and its expenses.
+
+    Inputs:
+        report: The :class:`app.models.ExpenseReport` instance being reviewed.
+        decisions: Sequence of line review decisions for each report line.
+
+    Outputs:
+        A two-item tuple containing the flash message and category that the
+        caller should present to the user interface.
+
+    External dependencies:
+        * Updates :class:`app.models.ExpenseReport` and ``ExpenseLine`` objects
+          in memory. Callers must commit changes via ``app.models.db.session``.
+    """
+
+    decision_map = {decision.line_id: decision for decision in decisions}
+    missing_lines = [line.id for line in report.lines if line.id not in decision_map]
+    if missing_lines:
+        raise ValueError("Select approve or reject for each expense line.")
+
+    any_rejected = False
+    for line in report.lines:
+        decision = decision_map.get(line.id)
+        if decision is None:
+            raise ValueError("Select approve or reject for each expense line.")
+
+        normalized_status = decision.status.strip().lower()
+        if normalized_status not in {"approve", "reject"}:
+            raise ValueError("Select approve or reject for each expense line.")
+
+        if normalized_status == "reject":
+            if not decision.comment:
+                raise ValueError(
+                    "Add a rejection comment for each rejected expense line."
+                )
+            line.status = "Rejected"
+            line.rejection_comment = decision.comment
+            any_rejected = True
+        else:
+            line.status = "Approved"
+            line.rejection_comment = None
+
+    if any_rejected:
+        report.status = "Draft"
+        report.rejection_comment = "One or more expense lines were rejected. Review line comments and resubmit."
+        return (
+            "Report updated with rejected lines and returned to draft status.",
+            "info",
+        )
+
+    report.status = "Pending Upload"
+    report.rejection_comment = None
+    return "Report approved and queued for NetSuite upload.", "success"
 
 
 def format_pending_reports_csv(reports: Sequence[ExpenseReport]) -> str:

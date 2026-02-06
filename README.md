@@ -8,7 +8,7 @@ and administrators manage access and policy settings.
 
 - Employee authentication (register, sign in, reset password)
 - Expense report creation and submission
-- Supervisor review and approval workflow
+- Supervisor line-by-line review and approval workflow
 - Admin dashboards for user and settings management
 - Audit-friendly persistence of submitted reports and status changes
 

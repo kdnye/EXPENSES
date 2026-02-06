@@ -24,10 +24,12 @@ from .models import ExpenseLine, ExpenseReport, User, db
 from .policies import employee_required, super_admin_required, supervisor_required
 from app.services.expense_workflow import (
     ExpenseReferenceDataError,
+    apply_line_review_decisions,
     dispatch_csv_via_sftp,
     format_pending_reports_csv,
     load_expense_types,
     load_gl_accounts,
+    parse_line_review_form_data,
     upload_receipt_to_cloud_storage,
 )
 
@@ -269,7 +271,22 @@ def supervisor_dashboard() -> str:
 @login_required
 @supervisor_required(approved_only=True)
 def review_report(report_id: int) -> str | Response:
-    """Allow supervisors to approve/reject pending reports with comments."""
+    """Allow supervisors to approve/reject pending reports with comments.
+
+    Inputs:
+        report_id: Unique identifier of the :class:`app.models.ExpenseReport`
+            being reviewed.
+
+    Outputs:
+        A rendered HTML page or redirect response after applying the decision.
+
+    External dependencies:
+        * Calls :func:`app.services.expense_workflow.parse_line_review_form_data`
+          to collect line-by-line decisions from the submission.
+        * Calls :func:`app.services.expense_workflow.apply_line_review_decisions`
+          to update report state based on line-level approvals or rejections.
+        * Uses :data:`flask_login.current_user` to enforce supervisor access.
+    """
 
     report = ExpenseReport.query.get_or_404(report_id)
     if report.supervisor_id != current_user.id:
@@ -277,27 +294,20 @@ def review_report(report_id: int) -> str | Response:
         return redirect(url_for("expenses.supervisor_dashboard"))
 
     if request.method == "POST":
-        action = (request.form.get("action") or "").strip().lower()
-        comment = (request.form.get("comment") or "").strip()
+        decisions = parse_line_review_form_data(report, dict(request.form))
 
-        if action == "reject" and not comment:
-            flash("Rejection comment is required.", "warning")
-            return redirect(url_for("expenses.review_report", report_id=report_id))
-
-        if action == "approve":
-            report.status = "Pending Upload"
-            report.rejection_comment = None
-            flash("Report approved and queued for NetSuite upload.", "success")
-        elif action == "reject":
-            report.status = "Draft"
-            report.rejection_comment = comment
-            flash("Report rejected and returned to employee draft status.", "info")
-        else:
-            flash("Select a valid review action.", "warning")
+        try:
+            message, category = apply_line_review_decisions(
+                report,
+                decisions=decisions,
+            )
+        except ValueError as exc:
+            flash(str(exc), "warning")
             return redirect(url_for("expenses.review_report", report_id=report_id))
 
         db.session.add(report)
         db.session.commit()
+        flash(message, category)
         return redirect(url_for("expenses.supervisor_dashboard"))
 
     return render_template("expenses/review_report.html", report=report)

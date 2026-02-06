@@ -43,11 +43,16 @@ from .scripts.import_air_rates import save_unique
 from .models import (
     AppSetting,
     CostZone,
+    ExpenseReport,
     User,
     db,
 )
 from . import csrf
 from .policies import employee_required, super_admin_required
+from app.services.expense_workflow import (
+    apply_line_review_decisions,
+    parse_line_review_form_data,
+)
 from app.services.rate_sets import (
     DEFAULT_RATE_SET,
     get_available_rate_sets,
@@ -56,6 +61,28 @@ from app.services.rate_sets import (
 from app.services.settings import get_settings_cache, reload_overrides, set_setting
 
 admin_bp = Blueprint("admin", __name__, template_folder="templates")
+
+
+def _pending_review_reports() -> List[ExpenseReport]:
+    """Return expense reports that are awaiting supervisor review.
+
+    Inputs:
+        None.
+
+    Outputs:
+        A list of :class:`app.models.ExpenseReport` records ordered by oldest
+        submission first so the admin dashboard can surface priority reviews.
+
+    External dependencies:
+        * Queries :class:`app.models.ExpenseReport` via SQLAlchemy to filter on
+          ``status="Pending Review"``.
+    """
+
+    return (
+        ExpenseReport.query.filter_by(status="Pending Review")
+        .order_by(ExpenseReport.created_at.asc())
+        .all()
+    )
 
 
 def _sync_admin_role(
@@ -401,12 +428,17 @@ def dashboard() -> str:
     :class:`app.models.User` records while approved employees are directed to a
     lightweight panel that links to :func:`quote.admin_view.quotes_html`.
 
+    Inputs:
+        None.
+
     Returns:
         str: Rendered HTML for either ``admin_dashboard.html`` or
         ``admin_employee_dashboard.html`` depending on the caller's role.
 
     External dependencies:
         * :class:`app.models.User` to populate the administrator table.
+        * :class:`app.models.ExpenseReport` to surface pending reviews for
+          super administrators.
         * :data:`flask_login.current_user` to branch between templates.
     """
 
@@ -414,13 +446,62 @@ def dashboard() -> str:
         current_user, "is_admin", False
     ):
         users = User.query.order_by(User.created_at.desc()).all()
+        pending_reports = _pending_review_reports()
         return render_template(
             "admin_dashboard.html",
             users=users,
+            pending_reports=pending_reports,
             settings_url=url_for("admin.list_settings"),
         )
 
     return render_template("admin_employee_dashboard.html")
+
+
+@admin_bp.route("/reports/<int:report_id>/review", methods=["GET", "POST"])
+@super_admin_required
+def review_report(report_id: int) -> Union[str, Response]:
+    """Review a pending expense report from the admin dashboard.
+
+    Inputs:
+        report_id: Unique identifier of the :class:`app.models.ExpenseReport`
+            targeted for review.
+
+    Outputs:
+        A rendered HTML page for GET requests or a redirect response after
+        applying the review decision on POST.
+
+    External dependencies:
+        * Calls :func:`app.services.expense_workflow.parse_line_review_form_data`
+          to collect line-by-line decisions from the submission.
+        * Calls :func:`app.services.expense_workflow.apply_line_review_decisions`
+          to update the report status and rejection comments.
+        * Uses :class:`app.models.ExpenseReport` to load persisted report data.
+        * Writes updates through :data:`app.models.db.session`.
+    """
+
+    report = ExpenseReport.query.get_or_404(report_id)
+    if report.status != "Pending Review":
+        flash("That report is not awaiting review.", "info")
+        return redirect(url_for("admin.dashboard"))
+
+    if request.method == "POST":
+        decisions = parse_line_review_form_data(report, dict(request.form))
+
+        try:
+            message, category = apply_line_review_decisions(
+                report,
+                decisions=decisions,
+            )
+        except ValueError as exc:
+            flash(str(exc), "warning")
+            return redirect(url_for("admin.review_report", report_id=report_id))
+
+        db.session.add(report)
+        db.session.commit()
+        flash(message, category)
+        return redirect(url_for("admin.dashboard"))
+
+    return render_template("expenses/review_report.html", report=report)
 
 
 @admin_bp.route("/settings")
